@@ -6,8 +6,10 @@ from threading import Timer
 from flask import Flask, request, jsonify, send_from_directory
 import os
 # 브라우저 경로 강제 지정 (Render 배포 환경용)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if os.environ.get('RENDER'):
-    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/opt/render/project/src/pw-browsers'
+    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = os.path.join(BASE_DIR, 'pw-browsers')
+    logger.info(f"실행 시점 브라우저 경로 설정: {os.environ['PLAYWRIGHT_BROWSERS_PATH']}")
 
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright

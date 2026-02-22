@@ -2,12 +2,10 @@ services:
   - type: web
     name: lotto-ai
     runtime: python
-    buildCommand: PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/pw-browsers pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/pw-browsers python -m playwright install chromium
+    buildCommand: chmod +x build.sh && ./build.sh
     startCommand: gunicorn --bind 0.0.0.0:$PORT lotto_server:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
       - key: PORT
         value: 5000
-      - key: PLAYWRIGHT_BROWSERS_PATH
-        value: /opt/render/project/src/pw-browsers
