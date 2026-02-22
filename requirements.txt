@@ -1,5 +1,6 @@
 flask
 flask-cors
-playwright
+playwright==1.49.1
 playwright-stealth
 gunicorn
+greenlet==3.3.2
