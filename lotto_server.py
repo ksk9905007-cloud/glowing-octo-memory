@@ -5,6 +5,9 @@ import webbrowser
 from threading import Timer
 from flask import Flask, request, jsonify, send_from_directory
 import os
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 # 브라우저 경로 강제 지정 (Render 배포 환경용)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if os.environ.get('RENDER'):
@@ -20,8 +23,7 @@ try:
 except ImportError:
     HAS_STEALTH = False
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+
 
 app = Flask(__name__)
 CORS(app)
