@@ -22,6 +22,10 @@ CORS(app)
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
+# 디버깅을 위한 환경 정보 출력
+logger.info(f"운영 환경: RENDER={os.environ.get('RENDER')}, DOCKER_ENV={os.environ.get('DOCKER_ENV')}")
+logger.info(f"브라우저 경로 설정: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH')}")
+
 def is_logged_in(page):
     try:
         content = page.content()
