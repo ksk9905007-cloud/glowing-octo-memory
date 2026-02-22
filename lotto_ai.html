@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Premium Lotto Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+KR:wght@300;400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #070912;
+            --container-bg: rgba(15, 23, 42, 0.65);
+            --accent-primary: #38bdf8;
+            --accent-secondary: #818cf8;
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+
+            --lotto-1: linear-gradient(135deg, #facc15, #ca8a04);
+            --lotto-2: linear-gradient(135deg, #60a5fa, #2563eb);
+            --lotto-3: linear-gradient(135deg, #f87171, #dc2626);
+            --lotto-4: linear-gradient(135deg, #94a3b8, #475569);
+            --lotto-5: linear-gradient(135deg, #4ade80, #16a34a);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow-x: hidden;
+        }
+
+        /* Ambient Background Background */
+        .ambient-light {
+            position: fixed;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            background: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(129, 140, 248, 0.08) 0%, transparent 40%);
+        }
+
+        .container {
+            width: 92%;
+            max-width: 680px;
+            padding: 3.5rem 2.5rem;
+            background: var(--container-bg);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid var(--glass-border);
+            border-radius: 2.5rem;
+            box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.8);
+            text-align: center;
+            position: relative;
+        }
+
+        .container::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            border-radius: 2.5rem;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            letter-spacing: -2.5px;
+            margin-bottom: 0.75rem;
+            background: linear-gradient(to right, #ffffff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .description {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+            font-weight: 300;
+            margin-bottom: 3.5rem;
+        }
+
+        /* Ball Section */
+        .ball-area {
+            display: flex;
+            justify-content: center;
+            gap: 14px;
+            margin-bottom: 4rem;
+            min-height: 80px;
+            perspective: 1000px;
+        }
+
+        .ball {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.7rem;
+            font-weight: 700;
+            color: white;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+            transform: rotateY(90deg) scale(0.5);
+            opacity: 0;
+            transition: all 0.7s cubic-bezier(0.19, 1, 0.22, 1);
+            position: relative;
+        }
+
+        .ball.active {
+            transform: rotateY(0deg) scale(1);
+            opacity: 1;
+        }
+
+        .ball::before {
+            content: '';
+            position: absolute;
+            top: 15%;
+            left: 15%;
+            width: 30%;
+            height: 30%;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            filter: blur(2px);
+        }
+
+        .c-1 {
+            background: var(--lotto-1);
+            color: #000;
+        }
+
+        .c-2 {
+            background: var(--lotto-2);
+        }
+
+        .c-3 {
+            background: var(--lotto-3);
+        }
+
+        .c-4 {
+            background: var(--lotto-4);
+        }
+
+        .c-5 {
+            background: var(--lotto-5);
+        }
+
+        /* Action Buttons */
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .base-btn {
+            padding: 1.4rem;
+            border-radius: 1.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 1.1rem;
+            font-weight: 600;
+            transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+            color: white;
+        }
+
+        .btn-random {
+            background: rgba(56, 189, 248, 0.1);
+            border-color: rgba(56, 189, 248, 0.2);
+        }
+
+        .btn-stats {
+            background: rgba(129, 140, 248, 0.1);
+            border-color: rgba(129, 140, 248, 0.2);
+        }
+
+        .btn-random:hover {
+            background: rgba(56, 189, 248, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .btn-stats:hover {
+            background: rgba(129, 140, 248, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .btn-main {
+            width: 100%;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            border: none;
+            font-size: 1.2rem;
+            font-weight: 700;
+            box-shadow: 0 15px 35px rgba(56, 189, 248, 0.25);
+            margin-bottom: 2rem;
+        }
+
+        .btn-main:hover {
+            transform: translateY(-5px) scale(1.02);
+            filter: brightness(1.1);
+            box-shadow: 0 20px 45px rgba(56, 189, 248, 0.4);
+        }
+
+        .btn-main:disabled {
+            opacity: 0.5;
+            cursor: wait;
+            transform: none;
+        }
+
+        /* History */
+        .history-section {
+            padding-top: 2rem;
+            border-top: 1px solid var(--glass-border);
+            text-align: left;
+        }
+
+        .history-scroll {
+            max-height: 180px;
+            overflow-y: auto;
+            margin-top: 1rem;
+        }
+
+        .history-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 1rem;
+            margin-bottom: 0.75rem;
+            border: 1px solid transparent;
+            transition: border 0.3s;
+        }
+
+        .history-card:hover {
+            border-color: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .tag {
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-dim);
+        }
+
+        .mini-balls {
+            display: flex;
+            gap: 6px;
+        }
+
+        .mini-ball {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .ball {
+                width: 48px;
+                height: 48px;
+                font-size: 1.2rem;
+            }
+
+            .btn-grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 2.2rem;
+            }
+        }
+
+        /* Status Toast */
+        #toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9);
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            border: 1px solid var(--accent-primary);
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.5s, bottom 0.5s;
+            pointer-events: none;
+        }
+
+        #toast.visible {
+            opacity: 1;
+            bottom: 50px;
+        }
+
+        /* ── 로그인 모달 ── */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 500;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.35s ease;
+        }
+
+        .modal-overlay.open {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .modal-box {
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            border-radius: 1.75rem;
+            padding: 2.5rem 2rem;
+            width: 92%;
+            max-width: 380px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8);
+            transform: translateY(20px);
+            transition: transform 0.35s cubic-bezier(0.19, 1, 0.22, 1);
+        }
+
+        .modal-overlay.open .modal-box {
+            transform: translateY(0);
+        }
+
+        .modal-box h2 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 0.4rem;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .modal-box p.modal-desc {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 1.8rem;
+        }
+
+        .modal-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-input-wrap {
+            position: relative;
+        }
+
+        .modal-input-wrap label {
+            display: block;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            margin-bottom: 0.4rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .modal-input-wrap input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.75rem;
+            padding: 0.85rem 1rem;
+            color: white;
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .modal-input-wrap input:focus {
+            border-color: rgba(56, 189, 248, 0.5);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+        }
+
+        .modal-btn-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .modal-cancel {
+            padding: 0.9rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.9rem;
+            color: var(--text-dim);
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .modal-cancel:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-confirm {
+            padding: 0.9rem;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            border: none;
+            border-radius: 0.9rem;
+            color: white;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: filter 0.3s, transform 0.3s;
+        }
+
+        .modal-confirm:hover {
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+        }
+
+        .modal-confirm:disabled {
+            opacity: 0.5;
+            cursor: wait;
+            transform: none;
+        }
+
+        .modal-status {
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            text-align: center;
+            min-height: 1.2rem;
+            color: var(--text-dim);
+        }
+
+        .modal-status.error {
+            color: #f87171;
+        }
+
+        .modal-status.success {
+            color: #4ade80;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ambient-light"></div>
+    <div class="container">
+        <h1>LOTTO ENGINE</h1>
+        <p class="description">지능형 알고리즘 및 클라우드 연동 자동 구매</p>
+
+        <div class="ball-area" id="ballDisplay"></div>
+
+        <div class="btn-grid">
+            <button class="base-btn btn-random" onclick="recommendNumbers('auto')">RANDOM 추천</button>
+            <button class="base-btn btn-stats" onclick="recommendNumbers('stat')">10년 빈도 통계</button>
+        </div>
+
+        <button class="base-btn btn-main" id="purchaseBtn" onclick="openLoginModal()">동행복권 즉시 구매 (연계계정)</button>
+        <div id="serverStatus" style="font-size: 0.95rem; margin-top: -1.5rem; margin-bottom: 2rem; font-weight: 600;">
+            서버 확인 중...</div>
+
+        <!-- 서버 미실행 시 나타날 스마트 런처 안내 -->
+        <div id="launcherGuide"
+            style="display: none; background: rgba(15, 23, 42, 0.8); border: 2px solid #f87171; padding: 1.5rem; border-radius: 1.5rem; margin-bottom: 2rem; box-shadow: 0 0 20px rgba(248, 113, 113, 0.2);">
+            <p style="font-size: 0.9rem; color: #f87171; margin-bottom: 1rem; line-height: 1.5;">⚠️ <b>서버 연동 실패:</b> 파이썬
+                서버가 꺼져 있습니다.<br><span style="color: #94a3b8; font-size: 0.8rem;">'1_로또AI_통합실행기.bat' 파일을 먼저 실행하세요.</span>
+            </p>
+            <button onclick="location.reload()"
+                style="padding: 0.6rem 1.2rem; background: #38bdf8; border: none; border-radius: 10px; color: white; font-weight: 700; cursor: pointer;">연결
+                다시 시도</button>
+        </div>
+
+        <div class="history-section">
+            <span style="font-size: 0.9rem; color: var(--text-dim);">최근 분석된 조합 리스트</span>
+            <div class="history-scroll" id="historyList"></div>
+        </div>
+    </div>
+
+    <div id="toast">메시지</div>
+
+    <!-- 로그인 모달 -->
+    <div class="modal-overlay" id="loginModal">
+        <div class="modal-box">
+            <h2>🔐 동행복권 계정 연결</h2>
+            <p class="modal-desc">구매를 위해 동행복권 아이디와 비밀번호를 입력하세요.<br>정보는 서버로만 전달되며 저장되지 않습니다.</p>
+            <div class="modal-input-group">
+                <div class="modal-input-wrap">
+                    <label for="modalId">아이디</label>
+                    <input type="text" id="modalId" placeholder="동행복권 아이디" autocomplete="username">
+                </div>
+                <div class="modal-input-wrap">
+                    <label for="modalPw">비밀번호</label>
+                    <input type="password" id="modalPw" placeholder="비밀번호" autocomplete="current-password">
+                </div>
+            </div>
+            <div class="modal-btn-row">
+                <button class="modal-cancel" onclick="closeLoginModal()">취소</button>
+                <button class="modal-confirm" id="modalConfirmBtn" onclick="confirmPurchase()">구매 시작</button>
+            </div>
+            <div class="modal-status" id="modalStatus"></div>
+        </div>
+    </div>
+
+    <script>
+        const STAT_NUMS = [1, 27, 34, 43, 13, 33, 17, 4, 39, 11, 40, 2, 20, 26, 37, 10, 14, 18, 5, 24];
+        let currentNumbers = [];
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.classList.add('visible');
+            setTimeout(() => t.classList.remove('visible'), 4000);
+        }
+
+        function getBallColor(n) {
+            if (n <= 10) return 'c-1';
+            if (n <= 20) return 'c-2';
+            if (n <= 30) return 'c-3';
+            if (n <= 40) return 'c-4';
+            return 'c-5';
+        }
+
+        function recommendNumbers(mode) {
+            const display = document.getElementById('ballDisplay');
+            display.innerHTML = '';
+
+            let pool = (mode === 'auto')
+                ? Array.from({ length: 45 }, (_, i) => i + 1)
+                : [...STAT_NUMS, ...STAT_NUMS, ...Array.from({ length: 45 }, (_, i) => i + 1)];
+
+            const result = [];
+            while (result.length < 6) {
+                const n = pool[Math.floor(Math.random() * pool.length)];
+                if (!result.includes(n)) result.push(n);
+            }
+            result.sort((a, b) => a - b);
+            currentNumbers = result;
+
+            result.forEach((num, i) => {
+                const el = document.createElement('div');
+                el.className = `ball ${getBallColor(num)}`;
+                el.innerText = num;
+                display.appendChild(el);
+                setTimeout(() => el.classList.add('active'), i * 120);
+            });
+
+            addToHistory(result, mode);
+            showToast(`${mode === 'auto' ? '랜덤' : '통계'} 기반 번호가 생생되었습니다.`);
+        }
+
+        function openLoginModal() {
+            if (currentNumbers.length !== 6) {
+                showToast('먼저 번호를 생성해 주세요.');
+                return;
+            }
+            document.getElementById('modalStatus').textContent = '';
+            document.getElementById('modalStatus').className = 'modal-status';
+            document.getElementById('loginModal').classList.add('open');
+            document.getElementById('modalId').focus();
+        }
+
+        function closeLoginModal() {
+            document.getElementById('loginModal').classList.remove('open');
+        }
+
+        // ESC 키로 모달 닫기
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeLoginModal();
+        });
+
+        // 모달 바깥 클릭 시 닫기
+        document.getElementById('loginModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('loginModal')) closeLoginModal();
+        });
+
+        async function confirmPurchase() {
+            const uid = document.getElementById('modalId').value.trim();
+            const upw = document.getElementById('modalPw').value.trim();
+            const statusEl = document.getElementById('modalStatus');
+            const confirmBtn = document.getElementById('modalConfirmBtn');
+
+            if (!uid || !upw) {
+                statusEl.textContent = '아이디와 비밀번호를 모두 입력하세요.';
+                statusEl.className = 'modal-status error';
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = '진행 중...';
+            statusEl.className = 'modal-status';
+
+            // ── 단계별 상태 메시지 표시 (서버 처리 중 UX) ──
+            const steps = [
+                { t: 0, msg: '🌐 동행복권 메인 페이지 접속 중...' },
+                { t: 3, msg: '🖱️ 동행복권통합포탈 이동 버튼 클릭 중...' },
+                { t: 6, msg: '⏳ 포탈 진입 완료. 5초간 자연 대기 중...' },
+                { t: 12, msg: '🔐 로그인 페이지 이동 중...' },
+                { t: 15, msg: '⌨️ 아이디/비밀번호 입력 중...' },
+                { t: 21, msg: '✔️ 로그인 처리 중...' },
+                { t: 26, msg: '🎱 로또 구매 페이지 이동 중...' },
+                { t: 31, msg: '🔢 번호 선택 & 구매 확정 중...' },
+            ];
+
+            let stepTimers = steps.map(s =>
+                setTimeout(() => {
+                    statusEl.textContent = s.msg;
+                }, s.t * 1000)
+            );
+
+            // 전역 변수에서 감지된 API 주소 사용
+            const apiBase = window.LOTTO_API_BASE || '';
+
+            try {
+                const response = await fetch(`${apiBase}/buy`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: uid, pw: upw, numbers: currentNumbers })
+                });
+                const data = await response.json();
+
+                // 진행 타이머 모두 취소
+                stepTimers.forEach(t => clearTimeout(t));
+
+                if (data.success) {
+                    statusEl.textContent = '✅ ' + data.message;
+                    statusEl.className = 'modal-status success';
+                    showToast('🎉 구매 완료! 동행복권 구매내역을 확인하세요.');
+
+                    // 구매완료 후 모달 닫기 빛 웹페이지 팝업 띄우기
+                    setTimeout(() => {
+                        closeLoginModal();
+                        alert("🎉 동행복권 즉시 구매가 최종 완료되었습니다! 🎉");
+                    }, 500);
+                } else {
+                    statusEl.textContent = '❌ ' + data.message;
+                    statusEl.className = 'modal-status error';
+                }
+            } catch (e) {
+                stepTimers.forEach(t => clearTimeout(t));
+                statusEl.textContent = '⚠️ 서버 연결 실패. lotto_server.py가 실행 중인지 확인하세요.';
+                statusEl.className = 'modal-status error';
+            } finally {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = '구매 시작';
+            }
+        }
+
+        function addToHistory(nums, mode) {
+            const list = document.getElementById('historyList');
+            const card = document.createElement('div');
+            card.className = 'history-card';
+
+            let balls = '<div class="mini-balls">';
+            nums.forEach(n => balls += `<div class="mini-ball ${getBallColor(n)}">${n}</div>`);
+            balls += '</div>';
+
+            card.innerHTML = `
+                <span class="tag">${mode === 'auto' ? 'RAND' : 'STAT'}</span>
+                ${balls}
+            `;
+            list.insertBefore(card, list.firstChild);
+        }
+
+        async function checkServer() {
+            const statusEl = document.getElementById('serverStatus');
+            const guideEl = document.getElementById('launcherGuide');
+            const purchaseBtn = document.getElementById('purchaseBtn');
+
+            // 시도할 주소들 (localhost, 127.0.0.1, 현재 도메인)
+            const targets = ['', 'http://127.0.0.1:5000', 'http://localhost:5000'];
+            let connected = false;
+
+            for (let base of targets) {
+                try {
+                    const res = await fetch(`${base}/health`, { mode: 'cors', cache: 'no-cache' });
+                    if (res.ok) {
+                        connected = true;
+                        window.LOTTO_API_BASE = base;
+                        break;
+                    }
+                } catch (e) { continue; }
+            }
+
+            if (connected) {
+                statusEl.innerHTML = '<span style="color: #4ade80; text-shadow: 0 0 10px #4ade80;">●</span> <span style="color: #4ade80;">서버 연동 완료 (정상)</span>';
+                guideEl.style.display = 'none';
+                purchaseBtn.disabled = false;
+                purchaseBtn.style.opacity = '1';
+
+                // 만약 현재 파일로 열려있는데 서버가 실행 중이면 서버 주소로 이동 제안
+                if (window.location.protocol === 'file:') {
+                    statusEl.innerHTML += `<br><a href="http://127.0.0.1:5000" style="color: #38bdf8; font-size: 0.8rem; text-decoration: underline;">[안정적인 서버 버전으로 전환]</a>`;
+                }
+            } else {
+                statusEl.innerHTML = '<span style="color: #f87171; text-shadow: 0 0 10px #f87171;">●</span> <span style="color: #f87171;">서버 연동 대기 중 (적색)</span>';
+                guideEl.style.display = 'block';
+                purchaseBtn.disabled = true;
+                purchaseBtn.style.opacity = '0.5';
+            }
+        }
+
+        window.onload = () => {
+            recommendNumbers('auto');
+            checkServer();
+            setInterval(checkServer, 3000); // 3초마다 자동으로 연동 체크 (연동 강화)
+        };
+    </script>
+</body>
+
+</html>
