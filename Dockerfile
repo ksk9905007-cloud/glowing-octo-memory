@@ -30,5 +30,5 @@ COPY . .
 ENV PORT=5000
 EXPOSE 5000
 
-# 서버 실행 (gunicorn 사용 추천)
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "lotto_server:app"]
+# 서버 실행 (Render의 PORT 환경변수 사용)
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT lotto_server:app"]

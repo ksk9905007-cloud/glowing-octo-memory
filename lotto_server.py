@@ -187,7 +187,7 @@ def do_purchase(page, numbers):
 def automate_purchase(user_id, user_pw, numbers):
     try:
         with sync_playwright() as p:
-            is_headless = bool(os.environ.get('RENDER') or os.environ.get('DOCKER_ENV') or True)
+            is_headless = bool(os.environ.get('RENDER') or os.environ.get('DOCKER_ENV'))
             browser = p.chromium.launch(headless=is_headless, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
             # 화면이 잘 보이도록 정상 PC 해상도로 원복
             context = browser.new_context(viewport={"width": 1366, "height": 768}, user_agent=UA)
