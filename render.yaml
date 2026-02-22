@@ -1,11 +1,7 @@
 services:
   - type: web
     name: lotto-ai
-    runtime: python
-    buildCommand: PLAYWRIGHT_BROWSERS_PATH=./pw-browsers pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=./pw-browsers python -m playwright install chromium
-    startCommand: gunicorn app:app
+    runtime: docker
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.8
-      - key: PLAYWRIGHT_BROWSERS_PATH
-        value: ./pw-browsers
+      - key: DOCKER_ENV
+        value: "true"

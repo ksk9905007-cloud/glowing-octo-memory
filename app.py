@@ -13,11 +13,7 @@ logger = logging.getLogger(__name__)
 
 # 브라우저 경로 및 환경 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-if os.environ.get('RENDER'):
-    # Render 환경에서는 프로젝트 내 pw-browsers 폴더 사용 (빌드 시 설치됨)
-    pw_path = os.path.join(BASE_DIR, 'pw-browsers')
-    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = pw_path
-    logger.info(f"Render 환경 감지. 브라우저 경로 설정: {pw_path}")
+# Docker 환경에서는 공식 이미지의 기본 브라우저 위치를 사용합니다.
 
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright
