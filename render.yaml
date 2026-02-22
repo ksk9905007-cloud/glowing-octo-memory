@@ -3,9 +3,9 @@ services:
     name: lotto-ai
     runtime: python
     buildCommand: pip install -r requirements.txt && python -m playwright install chromium && python -m playwright install-deps
-    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
+    startCommand: gunicorn --bind 0.0.0.0:$PORT lotto_server:app
     envVars:
       - key: PYTHON_VERSION
-        value: 3.14.3
+        value: 3.11.10
       - key: PORT
         value: 5000

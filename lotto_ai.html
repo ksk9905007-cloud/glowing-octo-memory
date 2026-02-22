@@ -656,10 +656,19 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id: uid, pw: upw, numbers: currentNumbers })
                 });
-                const data = await response.json();
-
+                
                 // 진행 타이머 모두 취소
                 stepTimers.forEach(t => clearTimeout(t));
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error("Server Error:", errorText);
+                    statusEl.textContent = `⚠️ 서버 오류 (${response.status}): 처리에 실패했습니다.`;
+                    statusEl.className = 'modal-status error';
+                    return;
+                }
+
+                const data = await response.json();
 
                 if (data.success) {
                     statusEl.textContent = '✅ ' + data.message;
@@ -677,6 +686,7 @@
                 }
             } catch (e) {
                 stepTimers.forEach(t => clearTimeout(t));
+                console.error("Fetch error:", e);
                 statusEl.textContent = '⚠️ 서버 연결 실패. lotto_server.py가 실행 중인지 확인하세요.';
                 statusEl.className = 'modal-status error';
             } finally {

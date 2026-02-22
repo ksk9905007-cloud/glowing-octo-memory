@@ -185,23 +185,27 @@ def do_purchase(page, numbers):
 
 
 def automate_purchase(user_id, user_pw, numbers):
-    with sync_playwright() as p:
-        is_headless = os.environ.get('RENDER') or os.environ.get('DOCKER_ENV') or True
-        browser = p.chromium.launch(headless=is_headless, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
-        # 화면이 잘 보이도록 정상 PC 해상도로 원복
-        context = browser.new_context(viewport={"width": 1366, "height": 768}, user_agent=UA)
-        page = context.new_page()
-        
-        if HAS_STEALTH: Stealth().apply_stealth_sync(page)
+    try:
+        with sync_playwright() as p:
+            is_headless = os.environ.get('RENDER') or os.environ.get('DOCKER_ENV') or True
+            browser = p.chromium.launch(headless=is_headless, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
+            # 화면이 잘 보이도록 정상 PC 해상도로 원복
+            context = browser.new_context(viewport={"width": 1366, "height": 768}, user_agent=UA)
+            page = context.new_page()
+            
+            if HAS_STEALTH: Stealth().apply_stealth_sync(page)
 
-        try:
-            if do_login(page, user_id, user_pw):
-                return do_purchase(page, numbers)
-            return False, "로그인 정보가 틀리거나 인증에 실패했습니다."
-        except Exception as e:
-            return False, str(e)
-        finally:
-            browser.close()
+            try:
+                if do_login(page, user_id, user_pw):
+                    return do_purchase(page, numbers)
+                return False, "로그인 정보가 틀리거나 인증에 실패했습니다."
+            except Exception as e:
+                return False, f"브라우저 조작 중 오류: {str(e)}"
+            finally:
+                browser.close()
+    except Exception as e:
+        logger.error(f"Playwright 시작 실패: {e}")
+        return False, f"시스템 오류 (Playwright): {str(e)}"
 
 @app.route('/')
 def index(): return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'lotto_ai.html')
