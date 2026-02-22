@@ -14,20 +14,10 @@ logger = logging.getLogger(__name__)
 # 브라우저 경로 및 환경 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if os.environ.get('RENDER'):
-    # Render 환경에서는 프로젝트 내 pw-browsers 폴더 사용
+    # Render 환경에서는 프로젝트 내 pw-browsers 폴더 사용 (빌드 시 설치됨)
     pw_path = os.path.join(BASE_DIR, 'pw-browsers')
     os.environ['PLAYWRIGHT_BROWSERS_PATH'] = pw_path
-    logger.info(f"Render 환경 감지. 브라우저 경로: {pw_path}")
-    
-    # 브라우저 설치 여부 확인 및 자동 설치 (빌드 명령어가 무시될 경우를 대비)
-    if not os.path.exists(pw_path):
-        logger.info("브라우저가 없습니다. 자동 설치를 시작합니다 (약 1~2분 소요)...")
-        try:
-            import subprocess
-            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-            logger.info("브라우저 설치 완료.")
-        except Exception as e:
-            logger.error(f"브라우저 자동 설치 실패: {e}")
+    logger.info(f"Render 환경 감지. 브라우저 경로 설정: {pw_path}")
 
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright
