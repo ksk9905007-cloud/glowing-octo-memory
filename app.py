@@ -17,7 +17,7 @@ if os.environ.get('RENDER'):
     # Render 환경에서는 프로젝트 내 .cache 폴더를 사용하도록 강제 지정
     pw_path = os.path.join(BASE_DIR, '.cache', 'ms-playwright')
     os.environ['PLAYWRIGHT_BROWSERS_PATH'] = pw_path
-    logger.info(f"Render 환경 감지. 브라우저 경로 설정: {pw_path}")
+    logger.info(f"Render 환경 초기화 완료: {pw_path}")
 
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright
@@ -30,6 +30,10 @@ except ImportError:
 
 app = Flask(__name__)
 CORS(app)
+
+@app.before_request
+def log_request():
+    logger.info(f"[REQUEST] {request.method} {request.path} from {request.remote_addr}")
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
@@ -220,18 +224,28 @@ def automate_purchase(user_id, user_pw, numbers):
     except Exception as e:
         logger.error(f"[CORE] 전체 프로세스 실패: {str(e)}")
         return False, f"시스템 오류: {str(e)}"
+    
+    return False, "알 수 없는 시스템 종료"
 
 @app.route('/')
-def index(): return send_from_directory(BASE_DIR, 'lotto_ai.html')
+def index():
+    try:
+        return send_from_directory(BASE_DIR, 'lotto_ai.html')
+    except:
+        return "Lotto Engine Online", 200
+
 @app.route('/health')
-def health(): return jsonify({"status": "ok", "port": os.environ.get('PORT')})
+@app.route('/ping')
+def health_status():
+    return jsonify({"status": "ok", "env": "render" if os.environ.get('RENDER') else "local"}), 200
+
 @app.route('/buy', methods=['POST'])
 def buy_endpoint():
-    data = request.json
+    data = request.json or {}
     success, msg = automate_purchase(data.get('id'), data.get('pw'), data.get('numbers'))
     return jsonify({"success": success, "message": msg})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    logger.info(f"서버 시작 시도 중... 포트: {port}")
+    logger.info(f"Flask 개발 서버 시작 중... 포트: {port}")
     app.run(host='0.0.0.0', port=port)
