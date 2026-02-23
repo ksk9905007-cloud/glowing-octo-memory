@@ -629,6 +629,10 @@
             confirmBtn.textContent = '진행 중...';
             statusEl.className = 'modal-status';
 
+            // ── 동행복권 사이트 자동 열기 ──
+            statusEl.textContent = '🌐 동행복권 사이트를 열고 있습니다...';
+            const dohangWindow = window.open('https://www.dhlottery.co.kr', 'dohang_lotto', 'width=1200,height=800');
+
             // ── 단계별 상태 메시지 표시 (서버 처리 중 UX) ──
             const steps = [
                 { t: 0, msg: '🌐 동행복권 메인 페이지 접속 중...' },
@@ -665,6 +669,7 @@
                     console.error("Server Error:", errorText);
                     statusEl.textContent = `⚠️ 서버 오류 (${response.status}): 처리에 실패했습니다.`;
                     statusEl.className = 'modal-status error';
+                    if (dohangWindow) dohangWindow.close();
                     return;
                 }
 
@@ -675,20 +680,27 @@
                     statusEl.className = 'modal-status success';
                     showToast('🎉 구매 완료! 동행복권 구매내역을 확인하세요.');
 
+                    // 동행복권 사이트에 포커스 주기 (사용자가 구매내역 확인 가능)
+                    if (dohangWindow) {
+                        dohangWindow.focus();
+                    }
+
                     // 구매완료 후 모달 닫기 빛 웹페이지 팝업 띄우기
                     setTimeout(() => {
                         closeLoginModal();
-                        alert("🎉 동행복권 즉시 구매가 최종 완료되었습니다! 🎉");
+                        alert("🎉 동행복권 즉시 구매가 최종 완료되었습니다! 🎉\n\n열린 동행복권 사이트에서 구매내역을 확인하세요.");
                     }, 500);
                 } else {
                     statusEl.textContent = '❌ ' + data.message;
                     statusEl.className = 'modal-status error';
+                    if (dohangWindow) dohangWindow.close();
                 }
             } catch (e) {
                 stepTimers.forEach(t => clearTimeout(t));
                 console.error("Fetch error:", e);
                 statusEl.textContent = '⚠️ 서버 연결 실패. lotto_server.py가 실행 중인지 확인하세요.';
                 statusEl.className = 'modal-status error';
+                if (dohangWindow) dohangWindow.close();
             } finally {
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = '구매 시작';
