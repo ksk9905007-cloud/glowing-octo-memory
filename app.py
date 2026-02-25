@@ -1,353 +1,464 @@
 import time
-import random
 import logging
-import webbrowser
-from threading import Timer
-from flask import Flask, request, jsonify, send_from_directory
 import os
 import sys
 import json
 import re
 from datetime import datetime, timedelta
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 
-# 로깅 설정 (최상단)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# ── 로깅 설정 ──────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 logger = logging.getLogger(__name__)
 
-# 브라우저 경로 및 환경 설정
+# ── 기본 경로 ──────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-if os.environ.get('RENDER'):
-    # Render 환경에서는 프로젝트 내 .cache 폴더를 사용하도록 강제 지정
-    pw_path = os.path.join(BASE_DIR, '.cache', 'ms-playwright')
-    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = pw_path
-    logger.info(f"Render 환경 초기화 완료: {pw_path}")
 
-from flask_cors import CORS
-from playwright.sync_api import sync_playwright
-
-try:
-    from playwright_stealth import Stealth
-    HAS_STEALTH = True
-except ImportError:
-    HAS_STEALTH = False
-
+# ── Flask 앱 (즉시 생성 → gunicorn 포트 감지용) ───────────────
 app = Flask(__name__)
 CORS(app)
 
-# 구매 이력 저장 파일
+# ── 구매 이력 파일 ─────────────────────────────────────────────
 HISTORY_FILE = os.path.join(BASE_DIR, 'purchase_history.json')
 
+# ── User-Agent ────────────────────────────────────────────────
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
+
+# ══════════════════════════════════════════════════════════════
+#  이력 관리
+# ══════════════════════════════════════════════════════════════
 def load_history():
-    """구매 이력 로드 (1개월 지난 항목 자동 삭제)"""
+    """구매 이력 로드 + 30일 초과 자동 삭제"""
     if not os.path.exists(HISTORY_FILE):
         return []
     try:
         with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
             history = json.load(f)
-        # 1개월(30일) 지난 항목 자동 삭제
         cutoff = datetime.now() - timedelta(days=30)
         filtered = [h for h in history if datetime.fromisoformat(h['timestamp']) > cutoff]
         if len(filtered) != len(history):
             save_history(filtered)
         return filtered
     except Exception as e:
-        logger.error(f"[HISTORY] 이력 로드 실패: {e}")
+        logger.error(f"[HISTORY] 로드 실패: {e}")
         return []
 
 def save_history(history):
-    """구매 이력 저장"""
     try:
         with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logger.error(f"[HISTORY] 이력 저장 실패: {e}")
+        logger.error(f"[HISTORY] 저장 실패: {e}")
 
 def add_history(numbers, round_no, round_date):
-    """구매 이력 추가"""
     history = load_history()
     entry = {
         'timestamp': datetime.now().isoformat(),
         'numbers': numbers,
-        'round': round_no,
-        'round_date': round_date,
+        'round': round_no or '---',
+        'round_date': round_date or datetime.now().strftime('%Y-%m-%d'),
     }
     history.insert(0, entry)
-    # 최대 200개 유지
-    history = history[:200]
-    save_history(history)
+    save_history(history[:200])
     return entry
 
-@app.before_request
-def log_request():
-    logger.info(f"[REQUEST] {request.method} {request.path} from {request.remote_addr}")
-
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+# ══════════════════════════════════════════════════════════════
+#  Playwright 헬퍼
+# ══════════════════════════════════════════════════════════════
+def _get_playwright_module():
+    """Playwright를 lazy import (서버 시작 속도에 영향 주지 않도록)"""
+    from playwright.sync_api import sync_playwright
+    return sync_playwright
 
 def is_logged_in(page):
     try:
         content = page.content()
-        return ".btn_logout" in content or "로그아웃" in content
-    except: return False
+        return "로그아웃" in content or "btn_logout" in content or "myPage" in content
+    except:
+        return False
 
 def do_login(page, user_id, user_pw):
+    logger.info(f"[LOGIN] '{user_id}' 로그인 시도...")
     try:
-        logger.info(f"[LOGIN] {user_id} 로그인 시도 중...")
-        page.goto("https://www.dhlottery.co.kr/login", wait_until="networkidle", timeout=30000)
-        page.wait_for_selector("#inpUserId", timeout=15000)
-        page.fill("#inpUserId", user_id)
-        page.fill("#inpUserPswdEncn", user_pw)
-        time.sleep(1)
-        page.click("#btnLogin")
-        
-        # 로그인 결과 대기 (URL 변화 또는 로그아웃 버튼 감지)
-        for _ in range(15):
+        page.goto("https://www.dhlottery.co.kr/user.do?method=login",
+                  wait_until="domcontentloaded", timeout=30000)
+        time.sleep(2)
+
+        # 아이디 입력
+        page.wait_for_selector("#userId", timeout=10000)
+        page.fill("#userId", "")
+        page.fill("#userId", user_id)
+        time.sleep(0.3)
+
+        # 비밀번호 입력
+        page.fill("#password", "")
+        page.fill("#password", user_pw)
+        time.sleep(0.5)
+
+        # 로그인 버튼 클릭
+        page.click(".btn_common.lrg.blu")
+        time.sleep(3)
+
+        # 로그인 성공 확인 (최대 15초 대기)
+        for i in range(15):
             if is_logged_in(page):
-                logger.info("[LOGIN] 로그인 성공!")
+                logger.info("[LOGIN] ✅ 로그인 성공!")
                 return True
             time.sleep(1)
-        logger.warning("[LOGIN] 로그인 확인 실패 (타임아웃)")
+
+        # 실패 메시지 확인
+        try:
+            alert_msg = page.locator(".alert_msg, .login_fail, #popupLayer").first.inner_text(timeout=2000)
+            logger.warning(f"[LOGIN] 실패 메시지: {alert_msg}")
+        except:
+            pass
+
+        logger.warning("[LOGIN] ❌ 로그인 확인 실패 (15초 타임아웃)")
         return False
     except Exception as e:
-        logger.error(f"[LOGIN] 오류 발생: {e}")
+        logger.error(f"[LOGIN] 오류: {e}")
         return False
 
-def attempt_click(context, selectors, text=None):
-    for sel in selectors:
-        try:
-            el = context.locator(sel).first
-            if el.is_visible(timeout=500):
-                el.scroll_into_view_if_needed(timeout=500)
-                el.click(force=True, timeout=1000)
+def _click_in_frame(page, selector, frame_name="ifrm_lotto645"):
+    """ifrm_lotto645 프레임 내에서 클릭, 실패하면 메인에서 시도"""
+    # 1. 지정 프레임
+    try:
+        frame = page.frame(name=frame_name)
+        if frame:
+            el = frame.locator(selector).first
+            if el.is_visible(timeout=2000):
+                el.click(force=True, timeout=3000)
                 return True
-        except: pass
-    if text:
-        try:
-            # 텍스트가 정확히 일치하는 요소 탐색
-            for tag in ["label", "span", "button", "a"]:
-                el = context.locator(f"{tag}:text-is('{text}')").first
+    except:
+        pass
+    # 2. 모든 프레임 순회
+    try:
+        for frame in page.frames:
+            try:
+                el = frame.locator(selector).first
                 if el.is_visible(timeout=500):
                     el.click(force=True, timeout=1000)
                     return True
-        except: pass
-    return False
-
-def robust_click(page, selectors, text=None):
-    # 1. 메인 페이지에서 먼저 시도
-    if attempt_click(page, selectors, text): return True
-    
-    # 2. 로또 6/45 전용 Iframe(ifrm_lotto645) 우선 탐색
+            except:
+                pass
+    except:
+        pass
+    # 3. 메인 페이지
     try:
-        game_frame = None
-        for frame in page.frames:
-            if "ifrm_lotto645" in frame.name:
-                game_frame = frame
-                break
-        
-        if game_frame and attempt_click(game_frame, selectors, text):
+        el = page.locator(selector).first
+        if el.is_visible(timeout=500):
+            el.click(force=True, timeout=1000)
             return True
-    except: pass
-    
-    # 3. 모든 프레임 탐색
-    try:
-        for frame in page.frames:
-            if attempt_click(frame, selectors, text): return True
-    except: pass
+    except:
+        pass
     return False
 
-def get_current_round_info(page):
-    """동행복권에서 현재 회차 정보 가져오기"""
-    round_no = "---"
-    round_date = "---"
+def _click_number(page, num):
+    """로또 번호 선택 (볼 클릭)"""
+    padded = f"{num:02d}"
+    selectors = [
+        f"label[for='check645num{padded}']",
+        f"label[for='check645num{num}']",
+        f"#num{padded}",
+    ]
+    for sel in selectors:
+        if _click_in_frame(page, sel):
+            return True
+
+    # JS 우회 (iframe 내부)
     try:
-        page.goto("https://www.dhlottery.co.kr/common.do?method=main", wait_until="networkidle", timeout=20000)
-        time.sleep(2)
+        frame = page.frame(name="ifrm_lotto645")
+        if frame:
+            frame.evaluate(f"""() => {{
+                const pad = n => String(n).padStart(2,'0');
+                const sel1 = `label[for='check645num${{pad({num})}}']`;
+                const sel2 = `label[for='check645num{num}']`;
+                const el = document.querySelector(sel1) || document.querySelector(sel2);
+                if (el) {{ el.click(); return; }}
+                document.querySelectorAll('label, span').forEach(e => {{
+                    if (e.innerText.trim() === '{num}') e.click();
+                }});
+            }}""")
+            return True
+    except:
+        pass
+    return False
+
+def get_round_info(page):
+    """현재 회차 정보 수집"""
+    round_no, round_date = "---", datetime.now().strftime("%Y-%m-%d")
+    try:
+        page.goto("https://www.dhlottery.co.kr/common.do?method=main",
+                  wait_until="domcontentloaded", timeout=20000)
+        time.sleep(1)
         content = page.content()
-        
-        # 회차 번호 파싱 (예: "제1159회")
-        m = re.search(r'제\s*(\d+)\s*회', content)
+
+        # 회차 번호
+        m = re.search(r'제\s*(\d{3,4})\s*회', content)
         if not m:
-            m = re.search(r'(\d{3,4})\s*회', content)
+            m = re.search(r'(\d{3,4})회차', content)
         if m:
-            round_no = m.group(1) + "회"
-        
-        # 추첨일 파싱 (예: "2025-02-22", "2025.02.22")
+            round_no = m.group(1)
+
+        # 추첨일
         m2 = re.search(r'(\d{4})[.\-](\d{2})[.\-](\d{2})', content)
         if m2:
             round_date = f"{m2.group(1)}-{m2.group(2)}-{m2.group(3)}"
-        else:
-            round_date = datetime.now().strftime("%Y-%m-%d")
     except Exception as e:
-        logger.warning(f"[ROUND] 회차 정보 조회 실패: {e}")
-        round_date = datetime.now().strftime("%Y-%m-%d")
-    
-    logger.info(f"[ROUND] 회차 정보: {round_no}, 추첨일: {round_date}")
+        logger.warning(f"[ROUND] 조회 실패: {e}")
+    logger.info(f"[ROUND] 회차: {round_no}, 추첨일: {round_date}")
     return round_no, round_date
 
 def do_purchase(page, numbers):
-    logger.info(f"[PURCHASE] {numbers} 구매 엔진 가동...")
+    logger.info(f"[PURCHASE] 구매 번호: {numbers}")
     dialog_msgs = []
+
     def handle_dialog(dialog):
-        logger.warning(f"[DIALOG] {dialog.message}")
+        logger.info(f"[DIALOG] '{dialog.message}' → 자동 확인")
         dialog_msgs.append(dialog.message)
         dialog.accept()
+
     page.on("dialog", handle_dialog)
 
     try:
-        # 0. 회차 정보 수집 (구매 전)
-        round_no, round_date = get_current_round_info(page)
-        
-        # 1. 구매 페이지 이동
-        logger.info("[PURCHASE] 6/45 구매 페이지 이동...")
-        page.goto("https://el.dhlottery.co.kr/game/TotalGame.jsp?LottoId=LO40", wait_until="networkidle", timeout=40000)
-        
-        # 2. 게임 Iframe 대기
-        logger.info("[PURCHASE] 게임 프레임(ifrm_lotto645) 대기 중...")
-        page.wait_for_selector("#ifrm_lotto645", timeout=20000)
-        time.sleep(3) # 추가 안정화 시간
+        # ─────────────────────────────────────────
+        # 0. 회차 정보 수집
+        # ─────────────────────────────────────────
+        round_no, round_date = get_round_info(page)
 
-        # 3. 팝업 제거 (Iframe 내부 팝업 포함)
-        logger.info("[PURCHASE] 팝업 및 방해 요소 제거 중...")
-        page.evaluate("""() => {
-            document.querySelectorAll('input[value="닫기"], .close, .popup-close, #close').forEach(el=>el.click());
-        }""")
-        
-        # Iframe 내부에서도 팝업 제거 시도
-        try:
-            game_frame = page.frame(name="ifrm_lotto645")
-            if game_frame:
-                game_frame.evaluate("""() => {
-                    document.querySelectorAll('input[value="닫기"], .close, .popup-close, #close').forEach(el=>el.click());
-                }""")
-        except: pass
+        # ─────────────────────────────────────────
+        # 1. 구매 페이지 이동
+        # ─────────────────────────────────────────
+        logger.info("[PURCHASE] 6/45 구매 페이지 이동...")
+        page.goto(
+            "https://el.dhlottery.co.kr/game/TotalGame.jsp?LottoId=LO40",
+            wait_until="domcontentloaded", timeout=40000
+        )
+
+        # ─────────────────────────────────────────
+        # 2. iframe 로딩 대기
+        # ─────────────────────────────────────────
+        logger.info("[PURCHASE] iframe 로딩 대기...")
+        page.wait_for_selector("#ifrm_lotto645", timeout=20000)
+        time.sleep(3)
+
+        # ─────────────────────────────────────────
+        # 3. 팝업 닫기
+        # ─────────────────────────────────────────
+        for close_sel in [
+            "input[value='닫기']", ".close_btn", ".btn_close",
+            "a:text-is('닫기')", "button:text-is('닫기')"
+        ]:
+            try:
+                frame = page.frame(name="ifrm_lotto645")
+                if frame:
+                    frame.locator(close_sel).first.click(timeout=500, force=True)
+            except:
+                pass
+            try:
+                page.locator(close_sel).first.click(timeout=500, force=True)
+            except:
+                pass
         time.sleep(1)
 
+        # ─────────────────────────────────────────
         # 4. 번호 선택
-        logger.info(f"[PURCHASE] {numbers} 번호 선택 시작...")
+        # ─────────────────────────────────────────
+        logger.info(f"[PURCHASE] 번호 선택 시작: {numbers}")
         for num in numbers:
-            padded = f"{num:02d}"
-            # 볼 선택용 다양한 셀렉터
-            selectors = [
-                f"label[for='check645num{padded}']",
-                f"label[for='check645num{num}']",
-                f"#num{padded}",
-                f"span:text-is('{num}')"
-            ]
-            if not robust_click(page, selectors):
-                logger.warning(f"[PURCHASE] {num}번 클릭 실패, JS 우회 시도...")
-                try:
-                    game_frame = page.frame(name="ifrm_lotto645")
-                    if game_frame:
-                        game_frame.evaluate(f"""(n) => {{
-                            let target = document.querySelector(`label[for='check645num${{n.padStart(2, '0')}}']`) || 
-                                         document.querySelector(`label[for='check645num${{parseInt(n)}}']`);
-                            if(target) target.click();
-                            else {{
-                                let els = document.querySelectorAll('label, span');
-                                for(let e of els) {{ if(e.innerText.trim() == n) {{ e.click(); break; }} }}
-                            }}
-                        }}""", str(num))
-                except: pass
-            time.sleep(0.15)
+            ok = _click_number(page, num)
+            logger.info(f"[PURCHASE] {num}번 선택 {'✅' if ok else '⚠️'}")
+            time.sleep(0.2)
 
-        # 5. 확인/선택완료 클릭
-        logger.info("[PURCHASE] 선택 완료('확인') 버튼 클릭...")
-        if not robust_click(page, ["#btnSelectNum", "a:text-is('확인')", "button:text-is('확인')", "span:text-is('확인')"]):
-            logger.error("[PURCHASE] '확인' 버튼을 찾지 못했습니다.")
+        time.sleep(0.5)
 
-        time.sleep(1.5)
-        if any("부족" in msg for msg in dialog_msgs):
-            logger.error(f"[PURCHASE] 구매 중단: 예치금 부족")
-            return False, f"예치금 부족: {dialog_msgs[-1] if dialog_msgs else '알 수 없음'}", None, None
-        
-        # 6. 구매하기 클릭
-        logger.info("[PURCHASE] 최종 '구매하기' 버튼 클릭...")
-        if not robust_click(page, ["#btnBuy", "a:text-is('구매하기')", "button:text-is('구매하기')"]):
-            logger.error("[PURCHASE] '구매하기' 버튼 클릭 실패")
-        
-        time.sleep(1.5)
+        # ─────────────────────────────────────────
+        # 5. '확인' 버튼 (선택 완료)
+        # ─────────────────────────────────────────
+        logger.info("[PURCHASE] '확인' 버튼 클릭...")
+        ok = False
+        for sel in ["#btnSelectNum", "input[value='확인']", "a.btn_common:text-is('확인')"]:
+            if _click_in_frame(page, sel):
+                logger.info(f"[PURCHASE] '확인' 버튼 클릭 성공 ({sel})")
+                ok = True
+                break
+        if not ok:
+            logger.warning("[PURCHASE] '확인' 버튼 못 찾음, 계속 진행...")
 
-        # 7. 최종 컨펌 팝업 ("구매하시겠습니까?")
-        logger.info("[PURCHASE] 최종 확인 팝업 승인 중...")
-        robust_click(page, ["#popupLayerConfirm input[value='확인']", "a:text-is('확인')", "button:text-is('확인')"])
-        
         time.sleep(2)
-        
-        # 8. 마지막 안내 팝업 처리
-        robust_click(page, [".btn_popup_buy_confirm input[value='확인']", "a:text-is('확인')", "button:text-is('확인')"])
-        
-        return True, "✅ 구매 성공! 계정의 구매내역을 확인해 주세요.", round_no, round_date
+
+        # 예치금 부족 체크
+        if any("부족" in m for m in dialog_msgs):
+            return False, f"예치금 부족: {dialog_msgs[-1]}", round_no, round_date
+
+        # ─────────────────────────────────────────
+        # 6. '구매하기' 버튼
+        # ─────────────────────────────────────────
+        logger.info("[PURCHASE] '구매하기' 버튼 클릭...")
+        ok = False
+        for sel in ["#btnBuy", "input[value='구매하기']", "a.btn_common:text-is('구매하기')", "button:text-is('구매하기')"]:
+            if _click_in_frame(page, sel):
+                logger.info(f"[PURCHASE] '구매하기' 버튼 클릭 성공 ({sel})")
+                ok = True
+                break
+        if not ok:
+            logger.warning("[PURCHASE] '구매하기' 버튼 못 찾음")
+
+        time.sleep(2)
+
+        # ─────────────────────────────────────────
+        # 7. 확인 팝업 ("구매하시겠습니까?")
+        # ─────────────────────────────────────────
+        logger.info("[PURCHASE] 구매확인 팝업 처리...")
+        for sel in [
+            "#popupLayerConfirm input[value='확인']",
+            ".btn_confirm input[value='확인']",
+            "input[value='확인']",
+            "a:text-is('확인')", "button:text-is('확인')"
+        ]:
+            try:
+                if _click_in_frame(page, sel):
+                    logger.info(f"[PURCHASE] 확인 팝업 클릭 ({sel})")
+                    break
+            except:
+                pass
+
+        time.sleep(2)
+
+        # ─────────────────────────────────────────
+        # 8. 구매내역 확인 팝업
+        # ─────────────────────────────────────────
+        logger.info("[PURCHASE] 구매내역 확인 팝업 처리...")
+        for sel in [
+            ".btn_popup_buy_confirm input[value='확인']",
+            ".confirm input[value='확인']",
+            "input[value='확인']",
+            "a:text-is('확인')", "button:text-is('확인')"
+        ]:
+            try:
+                if _click_in_frame(page, sel):
+                    logger.info(f"[PURCHASE] 구매내역 팝업 클릭 ({sel})")
+                    break
+            except:
+                pass
+
+        time.sleep(1)
+
+        logger.info("[PURCHASE] ✅ 구매 프로세스 완료!")
+        return True, "✅ 구매 성공! 동행복권 마이페이지에서 구매내역을 확인하세요.", round_no, round_date
 
     except Exception as e:
-        logger.error(f"[PURCHASE] 심각한 오류: {e}")
-        return False, f"구매 중 중단됨: {str(e)[:50]}", None, None
+        logger.error(f"[PURCHASE] 오류: {e}", exc_info=True)
+        return False, f"구매 중 오류 발생: {str(e)[:80]}", None, None
 
 def automate_purchase(user_id, user_pw, numbers):
+    sync_playwright = _get_playwright_module()
+    is_headless = bool(os.environ.get('RENDER') or os.environ.get('DOCKER_ENV'))
+    logger.info(f"[CORE] Headless={is_headless}")
+
     try:
         with sync_playwright() as p:
-            # Render나 Docker 환경이 아니면 일반 화면 모드(Headless=False)로 실행
-            is_headless = bool(os.environ.get('RENDER') or os.environ.get('DOCKER_ENV'))
-            logger.info(f"[CORE] 브라우저 실행 모드: Headless={is_headless}")
-            browser = p.chromium.launch(headless=is_headless, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
-            context = browser.new_context(viewport={"width": 1366, "height": 768}, user_agent=UA)
+            browser = p.chromium.launch(
+                headless=is_headless,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-infobars",
+                ]
+            )
+            context = browser.new_context(
+                viewport={"width": 1366, "height": 768},
+                user_agent=UA,
+                locale="ko-KR",
+            )
             page = context.new_page()
-            
-            if HAS_STEALTH: Stealth().apply_stealth_sync(page)
+
+            # Playwright Stealth (있으면 적용)
+            try:
+                from playwright_stealth import Stealth
+                Stealth().apply_stealth_sync(page)
+            except:
+                pass
 
             try:
-                if do_login(page, user_id, user_pw):
-                    success, msg, round_no, round_date = do_purchase(page, numbers)
-                    return success, msg, round_no, round_date
-                return False, "❌ 로그인에 실패했습니다. 아이디/비번을 확인해 주세요.", None, None
+                if not do_login(page, user_id, user_pw):
+                    return False, "❌ 로그인 실패. 아이디/비밀번호를 확인하세요.", None, None
+                return do_purchase(page, numbers)
             finally:
-                browser.close()
+                try:
+                    browser.close()
+                except:
+                    pass
     except Exception as e:
-        logger.error(f"[CORE] 전체 프로세스 실패: {str(e)}")
-        return False, f"시스템 오류: {str(e)}", None, None
-    
-    return False, "알 수 없는 시스템 종료", None, None
+        logger.error(f"[CORE] 전체 실패: {e}", exc_info=True)
+        return False, f"시스템 오류: {str(e)[:80]}", None, None
+
+# ══════════════════════════════════════════════════════════════
+#  Flask Routes
+# ══════════════════════════════════════════════════════════════
+@app.before_request
+def log_req():
+    logger.info(f"[REQ] {request.method} {request.path}")
 
 @app.route('/')
 def index():
-    try:
-        return send_from_directory(BASE_DIR, 'lotto_ai.html')
-    except:
-        return "Lotto Engine Online", 200
+    return send_from_directory(BASE_DIR, 'lotto_ai.html')
 
 @app.route('/health')
 @app.route('/ping')
-def health_status():
+def health():
     return jsonify({"status": "ok", "env": "render" if os.environ.get('RENDER') else "local"}), 200
 
 @app.route('/buy', methods=['POST'])
-def buy_endpoint():
+def buy():
     data = request.json or {}
-    success, msg, round_no, round_date = automate_purchase(data.get('id'), data.get('pw'), data.get('numbers'))
-    
+    uid      = data.get('id', '').strip()
+    upw      = data.get('pw', '').strip()
+    numbers  = data.get('numbers', [])
+
+    if not uid or not upw:
+        return jsonify({"success": False, "message": "아이디/비밀번호가 없습니다."}), 400
+    if not numbers or len(numbers) != 6:
+        return jsonify({"success": False, "message": "번호 6개가 필요합니다."}), 400
+
+    success, msg, round_no, round_date = automate_purchase(uid, upw, numbers)
+
     entry = None
-    if success and data.get('numbers'):
-        entry = add_history(data.get('numbers'), round_no or "---", round_date or datetime.now().strftime("%Y-%m-%d"))
-    
+    if success:
+        entry = add_history(numbers, round_no, round_date)
+
     return jsonify({
         "success": success,
         "message": msg,
         "round": round_no,
         "round_date": round_date,
-        "entry": entry
+        "entry": entry,
     })
 
 @app.route('/history', methods=['GET'])
 def get_history():
-    """구매 이력 조회 API"""
-    history = load_history()
-    return jsonify({"history": history})
+    return jsonify({"history": load_history()})
 
 @app.route('/history', methods=['DELETE'])
-def clear_history():
-    """구매 이력 전체 삭제 API"""
+def del_history():
     save_history([])
-    return jsonify({"success": True, "message": "이력이 삭제되었습니다."})
+    return jsonify({"success": True})
 
+# ══════════════════════════════════════════════════════════════
+#  개발 서버 실행
+# ══════════════════════════════════════════════════════════════
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    logger.info(f"Flask 개발 서버 시작 중... 포트: {port}")
-    app.run(host='0.0.0.0', port=port)
+    logger.info(f"Flask 개발 서버 시작: http://0.0.0.0:{port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
