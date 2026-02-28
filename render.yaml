@@ -11,3 +11,9 @@ services:
         value: true
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/.cache/ms-playwright
+      - key: PROXY_SERVER
+        value: ""
+      - key: PROXY_USER
+        value: ""
+      - key: PROXY_PASS
+        value: ""
