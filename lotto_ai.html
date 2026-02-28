@@ -1251,38 +1251,96 @@
         ════════════════════════════════════════ */
         async function loadLottoResult() {
             const el = document.getElementById('resultContent');
-            el.innerHTML = '<div class="result-loading">당첨번호 조회 중...</div>';
-            const apiBase = window.LOTTO_API_BASE || '';
-            try {
-                const res = await fetch(`${apiBase}/lotto-result`);
-                if (!res.ok) throw new Error('API 오류');
-                const d = await res.json();
-                if (!d.success) throw new Error(d.msg || '조회 실패');
-                latestLottoResult = d;
+            el.innerHTML = '<div class="result-loading">최신 당첨번호 조회 중...</div>';
 
-                const prize = d.first_prize ? Math.round(d.first_prize / 100000000) : 0;
-                const balls = d.numbers.map(n =>
-                    `<div class="result-ball ${getBallColor(n)}">${n}</div>`
-                ).join('');
+            // 1. 현재 회차 계산 (1회: 2002-12-07 기준)
+            const baseDate = new Date('2002-12-07T00:00:00+09:00');
+            const kstNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            const diffWeeks = Math.floor((kstNow - baseDate) / (1000 * 60 * 60 * 24 * 7));
+            const latestRound = diffWeeks + 1;
 
-                el.innerHTML = `
-                    <div class="result-round-title">▣ 제 ${d.round}회 로또 당첨번호 확인</div>
-                    <div class="result-meta">당첨 일정 : ${d.date}</div>
-                    <div class="result-balls">• 당첨번호 : ${balls}
-                        <span class="result-bonus">+</span>
-                        <div class="result-ball" style="background:#6366f1">${d.bonus}</div>
-                        <small style="color:#94a3b8;font-size:0.72rem;margin-left:0.3rem;">도찌</small>
-                    </div>
-                    <div class="result-summary">
-                        확인 결과 요약<br>
-                        · 1등 당첨자 : 정 ${d.first_winners}명${prize > 0 ? ` (약 ${prize}억원)` : ''}
-                    </div>
-                `;
-                // 이력 당첨 업데이트
-                renderHistory(currentUserId);
-            } catch (e) {
-                el.innerHTML = `<div class="result-loading">당첨번호 조회 실패: ${e.message}</div>`;
+            // 2. 브라우저에서 직접 동행복권 공식 API 호출 (CORS 프록시 경유)
+            //    Render 서버 IP 차단 문제를 완전히 우회
+            const dhlotteryApi = (round) =>
+                `https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo=${round}`;
+
+            // CORS 프록시 리스트 (실패 시 다음으로 시도)
+            const proxyFetch = async (url) => {
+                const proxies = [
+                    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+                    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+                ];
+                for (const proxy of proxies) {
+                    try {
+                        const res = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
+                        if (!res.ok) continue;
+                        const wrapper = await res.json();
+                        // allorigins는 .contents, codetabs는 직접 JSON
+                        const text = wrapper.contents || JSON.stringify(wrapper);
+                        return JSON.parse(text);
+                    } catch { continue; }
+                }
+                throw new Error('모든 프록시 실패');
+            };
+
+            // 최신 회차부터 최대 2개 역순 시도 (아직 추첨 전일 경우 대비)
+            for (let round = latestRound; round >= latestRound - 2; round--) {
+                try {
+                    const d = await proxyFetch(dhlotteryApi(round));
+                    if (d.returnValue !== 'success') continue;
+
+                    latestLottoResult = {
+                        round: d.drwNo,
+                        date: d.drwNoDate,
+                        numbers: [d.drwtNo1, d.drwtNo2, d.drwtNo3, d.drwtNo4, d.drwtNo5, d.drwtNo6],
+                        bonus: d.bnusNo,
+                        first_winners: d.firstPrzwnerCo || 0,
+                        first_prize: d.firstWinamnt || 0,
+                    };
+
+                    _displayLottoResult(latestLottoResult, el);
+                    renderHistory(currentUserId);
+                    return;
+                } catch { continue; }
             }
+
+            // 3. 브라우저 직접 실패 시 서버 백엔드 시도 (백업)
+            try {
+                const apiBase = window.LOTTO_API_BASE || '';
+                const res = await fetch(`${apiBase}/lotto-result`, { signal: AbortSignal.timeout(10000) });
+                if (res.ok) {
+                    const d = await res.json();
+                    if (d.success) {
+                        latestLottoResult = d;
+                        _displayLottoResult(d, el);
+                        renderHistory(currentUserId);
+                        return;
+                    }
+                }
+            } catch { }
+
+            el.innerHTML = '<div class="result-loading">⚠️ 당첨번호를 불러올 수 없습니다.<br><small>잠시 후 🔄 새로고침을 눌러주세요.</small></div>';
+        }
+
+        function _displayLottoResult(d, el) {
+            const prize = d.first_prize ? Math.round(d.first_prize / 100000000) : 0;
+            const balls = d.numbers.map(n =>
+                `<div class="result-ball ${getBallColor(n)}">${n}</div>`
+            ).join('');
+
+            el.innerHTML = `
+                <div class="result-round-title">◼ 제 ${d.round}회 로또 당첨번호</div>
+                <div class="result-meta">당첨 일정 : ${d.date}</div>
+                <div class="result-balls">• 당첨번호 : ${balls}
+                    <span class="result-bonus">+</span>
+                    <div class="result-ball" style="background:#6366f1">${d.bonus}</div>
+                    <small style="color:#94a3b8;font-size:0.72rem;margin-left:0.3rem;">보너스</small>
+                </div>
+                <div class="result-summary">
+                    당첨결과 요약<br>
+                    · 1등 당첨자 : 총 ${d.first_winners}명${prize > 0 ? ` (약 ${prize}억원)` : ''}
+                </div>
+            `;
         }
 
         /* ════════════════════════════════════════
