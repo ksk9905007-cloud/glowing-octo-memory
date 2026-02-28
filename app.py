@@ -60,6 +60,21 @@ UA = (
 # ── 실시간 화면 중계용 ──────────────────────────────────────────
 latest_screenshot = None
 
+# ── 프록시/타이밍 설정 ──────────────────────────────────────────
+PROXY_SERVER = os.environ.get('PROXY_SERVER') # 예: http://ip:port
+PROXY_USER = os.environ.get('PROXY_USER')
+PROXY_PASS = os.environ.get('PROXY_PASS')
+DEFAULT_TIMEOUT = 60000 # 60초 (60,000ms)
+
+def _get_proxy_config():
+    if not PROXY_SERVER:
+        return None
+    config = {"server": PROXY_SERVER}
+    if PROXY_USER and PROXY_PASS:
+        config["username"] = PROXY_USER
+        config["password"] = PROXY_PASS
+    return config
+
 # ══════════════════════════════════════════════════════════════
 #  이력 관리
 # ══════════════════════════════════════════════════════════════
@@ -125,36 +140,33 @@ def is_logged_in(page):
 def do_login(page, user_id, user_pw):
     logger.info(f"[LOGIN] '{user_id}' 로그인 시도...")
     try:
-        logger.info("[LOGIN] 메인 홈페이지 먼저 접속 후 2.5초 대기...")
-        page.goto("https://www.dhlottery.co.kr/", wait_until="domcontentloaded", timeout=30000)
-        time.sleep(2.5)
+        logger.info("[LOGIN] 메인 홈페이지 먼저 접속 후 대기...")
+        page.goto("https://www.dhlottery.co.kr/", wait_until="domcontentloaded", timeout=DEFAULT_TIMEOUT)
+        time.sleep(3)
 
         logger.info("[LOGIN] 로그인 페이지로 이동...")
         # 리퍼러(이전 페이지 기록)를 조작하여 정상적인 링크 탑승으로 완전 위장
         page.goto("https://www.dhlottery.co.kr/login", 
                   referer="https://www.dhlottery.co.kr/", 
-                  wait_until="domcontentloaded", timeout=30000)
+                  wait_until="domcontentloaded", timeout=DEFAULT_TIMEOUT)
         time.sleep(2)
 
-        # 변경된 아이디 입력창 (#userId)
-        page.wait_for_selector("#userId", timeout=30000)
+        # 변경된 아이디 입력창 (#inpUserId)
+        page.wait_for_selector("#inpUserId", timeout=30000)
         page.wait_for_timeout(500)
-        page.locator("#userId").click()
-        page.fill("#userId", "")
-        page.type("#userId", user_id, delay=150)
+        page.locator("#inpUserId").click()
+        page.fill("#inpUserId", "")
+        page.type("#inpUserId", user_id, delay=150)
         
-        # 변경된 비밀번호 입력창 (#userPwd)
-        page.locator("#userPwd").click()
-        page.fill("#userPwd", "")
-        page.type("#userPwd", user_pw, delay=200)
+        # 변경된 비밀번호 입력창 (#inpUserPswdEncn)
+        page.locator("#inpUserPswdEncn").click()
+        page.fill("#inpUserPswdEncn", "")
+        page.type("#inpUserPswdEncn", user_pw, delay=200)
         page.wait_for_timeout(500)
         _capture_screenshot(page)
 
-        # 로그인 버튼 (#btnLogin / .btn_common.lrg.blu)
-        login_btn = page.locator(".btn_common.lrg.blu").first
-        if not login_btn.is_visible():
-            login_btn = page.locator("#btnLogin")
-            
+        # 로그인 버튼 (#btnLogin)
+        login_btn = page.locator("#btnLogin")
         login_btn.hover()
         page.wait_for_timeout(300)
         login_btn.click()
@@ -335,7 +347,7 @@ def get_round_info(page):
     round_no, round_date = "---", datetime.now().strftime("%Y-%m-%d")
     try:
         page.goto("https://www.dhlottery.co.kr/common.do?method=main",
-                  wait_until="domcontentloaded", timeout=20000)
+                  wait_until="domcontentloaded", timeout=DEFAULT_TIMEOUT)
         time.sleep(1)
         content = page.content()
 
@@ -378,7 +390,7 @@ def do_purchase(page, numbers):
         logger.info("[PURCHASE] 6/45 구매 페이지 이동...")
         page.goto(
             "https://el.dhlottery.co.kr/game/TotalGame.jsp?LottoId=LO40",
-            wait_until="domcontentloaded", timeout=40000
+            wait_until="domcontentloaded", timeout=DEFAULT_TIMEOUT
         )
         _capture_screenshot(page)
 
@@ -545,6 +557,7 @@ def automate_purchase(user_id, user_pw, numbers):
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=is_headless,
+                proxy=_get_proxy_config(),
                 args=[
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
@@ -624,11 +637,12 @@ def diagnostic():
             # 브라우저 실행 시 경로 이슈를 방지하기 위해 args와 함께 명시적 실행
             browser = p.chromium.launch(
                 headless=True, 
+                proxy=_get_proxy_config(),
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             page = browser.new_page()
             # 동행복권 사이트 직접 접속 테스트
-            page.goto("https://www.dhlottery.co.kr/", timeout=20000)
+            page.goto("https://www.dhlottery.co.kr/", timeout=DEFAULT_TIMEOUT)
             title = page.title()
             browser.close()
             return jsonify({"success": True, "title": title, "msg": "브라우저 엔진이 정상 작동합니다."})
