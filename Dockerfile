@@ -8,6 +8,7 @@ ENV RENDER true
 ENV PORT 10000
 
 # Set working directory
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/pw-browsers
 WORKDIR /app
 
 # Install Python dependencies

@@ -8,6 +8,10 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
+# Render/Docker 대응: Playwright 브라우저 경로 강제 설정
+if os.environ.get('RENDER') or os.environ.get('DOCKER_ENV'):
+    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/app/pw-browsers'
+
 # ── 로깅 설정 ──────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
