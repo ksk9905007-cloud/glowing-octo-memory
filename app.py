@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import re
+import urllib.request
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -78,8 +79,8 @@ def _get_proxy_config():
 # ══════════════════════════════════════════════════════════════
 #  이력 관리
 # ══════════════════════════════════════════════════════════════
-def load_history():
-    """구매 이력 로드 + 30일 초과 자동 삭제"""
+def load_history(user_id=None):
+    """구매 이력 로드 + 30일 초과 자동 삭제 (user_id 기준 필터)"""
     if not os.path.exists(HISTORY_FILE):
         return []
     try:
@@ -89,6 +90,9 @@ def load_history():
         filtered = [h for h in history if datetime.fromisoformat(h['timestamp']) > cutoff]
         if len(filtered) != len(history):
             save_history(filtered)
+        # 사용자 ID로 필터링
+        if user_id:
+            filtered = [h for h in filtered if h.get('user_id') == user_id]
         return filtered
     except Exception as e:
         logger.error(f"[HISTORY] 로드 실패: {e}")
@@ -101,16 +105,18 @@ def save_history(history):
     except Exception as e:
         logger.error(f"[HISTORY] 저장 실패: {e}")
 
-def add_history(numbers, round_no, round_date):
+def add_history(numbers, round_no, round_date, user_id=None):
+    # 전체 이력 로드 (필터 없이)
     history = load_history()
     entry = {
         'timestamp': datetime.now().isoformat(),
         'numbers': numbers,
         'round': round_no or '---',
         'round_date': round_date or datetime.now().strftime('%Y-%m-%d'),
+        'user_id': user_id or 'unknown',
     }
     history.insert(0, entry)
-    save_history(history[:200])
+    save_history(history[:500])
     return entry
 
 # ══════════════════════════════════════════════════════════════
@@ -674,7 +680,7 @@ def buy():
 
     entry = None
     if success:
-        entry = add_history(numbers, round_no, round_date)
+        entry = add_history(numbers, round_no, round_date, user_id=uid)
 
     return jsonify({
         "success": success,
@@ -686,12 +692,61 @@ def buy():
 
 @app.route('/history', methods=['GET'])
 def get_history():
-    return jsonify({"history": load_history()})
+    # ?user_id=xxx 쿼리로 사용자별 필터 가능
+    user_id = request.args.get('user_id', None)
+    return jsonify({"history": load_history(user_id=user_id)})
 
 @app.route('/history', methods=['DELETE'])
 def del_history():
-    save_history([])
+    user_id = request.args.get('user_id', None)
+    if user_id:
+        # 해당 유저 이력만 삭제
+        all_history = load_history()
+        remaining = [h for h in all_history if h.get('user_id') != user_id]
+        save_history(remaining)
+    else:
+        save_history([])
     return jsonify({"success": True})
+
+@app.route('/lotto-result')
+def lotto_result():
+    """동행복권 API에서 최신 당첨번호 조회"""
+    try:
+        # 1. 최신 회차 번호 파악 (메인에서 파싱)
+        headers = {'User-Agent': UA}
+        req = urllib.request.Request('https://www.dhlottery.co.kr/common.do?method=main', headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode('utf-8')
+        m = re.search(r'제\s*(\d{3,4})\s*회', html)
+        if not m:
+            m = re.search(r'drwNo=(\d{3,4})', html)
+        latest_round = int(m.group(1)) if m else 1162
+
+        # 2. 해당 회차 당첨 정보 API 호출
+        api_url = f'https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo={latest_round}'
+        req2 = urllib.request.Request(api_url, headers=headers)
+        with urllib.request.urlopen(req2, timeout=10) as resp2:
+            result = json.loads(resp2.read().decode('utf-8'))
+
+        if result.get('returnValue') != 'success':
+            return jsonify({'success': False, 'msg': '당첨번호 데이터 없음'}), 404
+
+        return jsonify({
+            'success': True,
+            'round': result.get('drwNo'),
+            'date': result.get('drwNoDate'),
+            'numbers': [
+                result.get('drwtNo1'), result.get('drwtNo2'),
+                result.get('drwtNo3'), result.get('drwtNo4'),
+                result.get('drwtNo5'), result.get('drwtNo6'),
+            ],
+            'bonus': result.get('bnusNo'),
+            'first_winners': result.get('firstPrzwnerCo', 0),
+            'first_prize': result.get('firstWinamnt', 0),
+        })
+    except Exception as e:
+        logger.error(f"[RESULT] 당첨번호 조회 실패: {e}")
+        return jsonify({'success': False, 'msg': str(e)}), 500
 
 # ══════════════════════════════════════════════════════════════
 #  개발 서버 실행

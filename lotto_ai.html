@@ -812,6 +812,118 @@
         .progress-bar-wrap.active {
             display: block;
         }
+
+        /* ── 당첨결과 섹션 ─────────────────────────── */
+        .result-section {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 1.2rem 1.4rem;
+            margin-bottom: 1.4rem;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #fbbf24;
+            margin-bottom: 1rem;
+        }
+
+        .btn-refresh-result {
+            background: transparent;
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            border-radius: 8px;
+            color: #fbbf24;
+            font-size: 0.72rem;
+            padding: 0.3rem 0.7rem;
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .btn-refresh-result:hover {
+            background: rgba(251, 191, 36, 0.15);
+        }
+
+        .result-loading {
+            color: #64748b;
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 1rem 0;
+        }
+
+        .result-round-title {
+            font-size: 1rem;
+            font-weight: 800;
+            color: #f1f5f9;
+            margin-bottom: 0.5rem;
+        }
+
+        .result-meta {
+            font-size: 0.78rem;
+            color: #94a3b8;
+            margin-bottom: 0.8rem;
+        }
+
+        .result-balls {
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 0.7rem;
+        }
+
+        .result-ball {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.8rem;
+            color: #fff;
+        }
+
+        .result-bonus {
+            font-size: 1.1rem;
+            margin: 0 0.3rem;
+            color: #94a3b8;
+        }
+
+        .result-summary {
+            background: rgba(251, 191, 36, 0.07);
+            border-radius: 10px;
+            padding: 0.7rem 1rem;
+            font-size: 0.82rem;
+            color: #e2e8f0;
+            line-height: 1.7;
+        }
+
+        /* ── 당첨 뱃지 ─────────────────────────────── */
+        .win-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #f59e0b, #ef4444);
+            color: #fff;
+            font-size: 0.68rem;
+            font-weight: 800;
+            padding: 0.15rem 0.5rem;
+            border-radius: 6px;
+            margin-left: 0.4rem;
+            animation: pulse 1.5s infinite;
+        }
+
+        .no-win-badge {
+            display: inline-block;
+            background: rgba(100, 116, 139, 0.3);
+            color: #94a3b8;
+            font-size: 0.68rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 6px;
+            margin-left: 0.4rem;
+        }
     </style>
 </head>
 
@@ -840,16 +952,25 @@
                 style="padding: 0.6rem 1.2rem; background: #38bdf8; border: none; border-radius: 10px; color: white; font-weight: 700; cursor: pointer;">연결
                 다시 시도</button>
         </div>
-        <!-- 구매 이력 -->
-        <div class="history-section">
-            <div class="history-header">
-                <span>🧾 구매 이력 <small style="color: #475569; font-size: 0.72rem;">(30일 후 자동 삭제)</small></span>
-                <button class="btn-clear-history" onclick="clearAllHistory()">전체 삭제</button>
+        <-- 최신 당첨결과 섹션 -->
+            <div class="result-section" id="resultSection">
+                <div class="result-header">
+                    <span>🏆 최신 당첨결과</span>
+                    <button class="btn-refresh-result" onclick="loadLottoResult()">🔄 새로고침</button>
+                </div>
+                <div id="resultContent" class="result-loading">당첨번호 조회 중...</div>
             </div>
-            <div class="history-scroll" id="historyList">
-                <div class="history-empty" id="historyEmpty">구매 이력이 없습니다.</div>
+            <!-- 구매 이력 -->
+            <div class="history-section">
+                <div class="history-header">
+                    <span>🧾 내 구매 이력 <small style="color: #475569; font-size: 0.72rem;"
+                            id="historyUserLabel"></small></span>
+                    <button class="btn-clear-history" onclick="clearAllHistory()">전체 삭제</button>
+                </div>
+                <div class="history-scroll" id="historyList">
+                    <div class="history-empty" id="historyEmpty">구매 이력이 없습니다.</div>
+                </div>
             </div>
-        </div>
     </div>
 
     <div id="toast">메시지</div>
@@ -903,6 +1024,8 @@
         const STAT_NUMS = [1, 27, 34, 43, 13, 33, 17, 4, 39, 11, 40, 2, 20, 26, 37, 10, 14, 18, 5, 24];
         const HISTORY_KEY = 'lotto_purchase_history';
         let currentNumbers = [];
+        let currentUserId = '';   // 로그인 사용자 ID 저장
+        let latestLottoResult = null; // 최신 당첨결과 저장
 
         function showToast(msg, duration = 4000) {
             const t = document.getElementById('toast');
@@ -1023,6 +1146,8 @@
         async function confirmPurchase() {
             const uid = document.getElementById('modalId').value.trim();
             const upw = document.getElementById('modalPw').value.trim();
+            // 사용자 ID 저장 (이력 표시 기준)
+            if (uid) currentUserId = uid;
             const statusEl = document.getElementById('modalStatus');
             const confirmBtn = document.getElementById('modalConfirmBtn');
             const progressWrap = document.getElementById('progressWrap');
@@ -1098,7 +1223,7 @@
                         round_date: data.round_date || new Date().toISOString().slice(0, 10)
                     };
                     saveHistoryLocal(entry);
-                    renderHistory();
+                    renderHistory(currentUserId);
 
                     setTimeout(() => {
                         closeLoginModal();
@@ -1117,6 +1242,46 @@
             } finally {
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = '구매 시작';
+                stopLiveStream();
+            }
+        }
+
+        /* ════════════════════════════════════════
+           당첨결과 조회
+        ════════════════════════════════════════ */
+        async function loadLottoResult() {
+            const el = document.getElementById('resultContent');
+            el.innerHTML = '<div class="result-loading">당첨번호 조회 중...</div>';
+            const apiBase = window.LOTTO_API_BASE || '';
+            try {
+                const res = await fetch(`${apiBase}/lotto-result`);
+                if (!res.ok) throw new Error('API 오류');
+                const d = await res.json();
+                if (!d.success) throw new Error(d.msg || '조회 실패');
+                latestLottoResult = d;
+
+                const prize = d.first_prize ? Math.round(d.first_prize / 100000000) : 0;
+                const balls = d.numbers.map(n =>
+                    `<div class="result-ball ${getBallColor(n)}">${n}</div>`
+                ).join('');
+
+                el.innerHTML = `
+                    <div class="result-round-title">▣ 제 ${d.round}회 로또 당첨번호 확인</div>
+                    <div class="result-meta">당첨 일정 : ${d.date}</div>
+                    <div class="result-balls">• 당첨번호 : ${balls}
+                        <span class="result-bonus">+</span>
+                        <div class="result-ball" style="background:#6366f1">${d.bonus}</div>
+                        <small style="color:#94a3b8;font-size:0.72rem;margin-left:0.3rem;">도찌</small>
+                    </div>
+                    <div class="result-summary">
+                        확인 결과 요약<br>
+                        · 1등 당첨자 : 정 ${d.first_winners}명${prize > 0 ? ` (약 ${prize}억원)` : ''}
+                    </div>
+                `;
+                // 이력 당첨 업데이트
+                renderHistory(currentUserId);
+            } catch (e) {
+                el.innerHTML = `<div class="result-loading">당첨번호 조회 실패: ${e.message}</div>`;
             }
         }
 
@@ -1179,23 +1344,31 @@
         function clearAllHistory() {
             if (!confirm('구매 이력을 모두 삭제하시겠습니까?')) return;
             localStorage.removeItem(HISTORY_KEY);
-            renderHistory();
+            renderHistory(currentUserId);
             showToast('구매 이력이 삭제되었습니다.');
             // 서버 이력도 삭제 시도
             const apiBase = window.LOTTO_API_BASE || '';
             if (apiBase !== undefined) {
-                fetch(`${apiBase}/history`, { method: 'DELETE' }).catch(() => { });
+                const uid = currentUserId || '';
+                fetch(`${apiBase}/history${uid ? '?user_id=' + encodeURIComponent(uid) : ''}`, { method: 'DELETE' }).catch(() => { });
             }
         }
 
-        function renderHistory() {
+        function renderHistory(userId) {
             const list = document.getElementById('historyList');
-            const empty = document.getElementById('historyEmpty');
+            const label = document.getElementById('historyUserLabel');
+
+            if (userId) {
+                label.textContent = `(${userId} 님 기준)`;
+            } else {
+                label.textContent = '(30일 후 자동 삭제)';
+            }
 
             // 서버 이력 우선 로드 시도, 실패 시 로컬스토리지 사용
             const apiBase = window.LOTTO_API_BASE;
             if (apiBase !== undefined) {
-                fetch(`${apiBase}/history`)
+                const qs = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+                fetch(`${apiBase}/history${qs}`)
                     .then(r => r.ok ? r.json() : null)
                     .then(data => {
                         if (data && data.history && data.history.length > 0) {
@@ -1220,12 +1393,16 @@
 
             if (!history || history.length === 0) {
                 empty.style.display = 'block';
-                // 빈 카드들 제거
                 list.querySelectorAll('.history-card').forEach(c => c.remove());
                 return;
             }
             empty.style.display = 'none';
             list.querySelectorAll('.history-card').forEach(c => c.remove());
+
+            // 당첨번호 세트 변환 (업데이트된 latestLottoResult 기준)
+            const winNums = latestLottoResult ? new Set(latestLottoResult.numbers) : null;
+            const winBonus = latestLottoResult ? latestLottoResult.bonus : null;
+            const winRound = latestLottoResult ? String(latestLottoResult.round) : null;
 
             history.forEach(entry => {
                 const card = document.createElement('div');
@@ -1236,8 +1413,26 @@
                     : '';
 
                 const roundLabel = entry.round && entry.round !== '---'
-                    ? `제${entry.round}`
+                    ? `제${entry.round}회`
                     : (entry.round_date || '');
+
+                // 당첨 체크 (구매 회차가 당첨 회차와 일치할 때)
+                let winBadge = '';
+                if (winNums && winRound && String(entry.round) === winRound) {
+                    const myNums = new Set(entry.numbers || []);
+                    const matchCount = [...myNums].filter(n => winNums.has(n)).length;
+                    const hasBonus = myNums.has(winBonus);
+                    let grade = '';
+                    if (matchCount === 6) grade = '🥇 1등';
+                    else if (matchCount === 5 && hasBonus) grade = '🥈 2등';
+                    else if (matchCount === 5) grade = '🥉 3등';
+                    else if (matchCount === 4) grade = '🏅 4등';
+                    else if (matchCount === 3) grade = '🎉 5등';
+
+                    winBadge = grade
+                        ? `<span class="win-badge">${grade} 당첨!</span>`
+                        : `<span class="no-win-badge">미당첨</span>`;
+                }
 
                 let balls = '<div class="mini-balls">';
                 (entry.numbers || []).forEach(n => {
@@ -1247,7 +1442,7 @@
 
                 card.innerHTML = `
                     <div class="history-card-top">
-                        <span class="history-round">${roundLabel || '회차미상'}</span>
+                        <span class="history-round">${roundLabel || '회차미상'}${winBadge}</span>
                         <span class="history-date">${dateStr}</span>
                     </div>
                     ${balls}
@@ -1286,7 +1481,8 @@
                 if (window.location.protocol === 'file:') {
                     statusEl.innerHTML += `<br><a href="http://127.0.0.1:5000" style="color: #38bdf8; font-size: 0.8rem; text-decoration: underline;">[안정적인 서버 버전으로 전환]</a>`;
                 }
-                renderHistory();
+                renderHistory(currentUserId);
+                loadLottoResult();
             } else {
                 statusEl.innerHTML = '<span style="color: #f87171; text-shadow: 0 0 10px #f87171;">●</span> <span style="color: #f87171;">서버 연동 대기 중 (적색)</span>';
                 guideEl.style.display = 'block';
@@ -1319,7 +1515,7 @@
         window.onload = () => {
             recommendNumbers('auto');
             checkServer();
-            setInterval(checkServer, 30000); // 30초마다 연동 체크
+            setInterval(checkServer, 30000);
         };
     </script>
 </body>
