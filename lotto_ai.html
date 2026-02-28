@@ -953,6 +953,22 @@
            로그인 모달
         ════════════════════════════════════════ */
         function openLoginModal() {
+            // ── 로또 구매 불가 시간 체크 (한국시간 기준) ──────────
+            const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            const day = kst.getDay();   // 0=일, 6=토
+            const hour = kst.getHours();
+
+            // 매일 00~06시 : 점검/판매 정지
+            if (hour >= 0 && hour < 6) {
+                alert("🛑 로또 구매 불가 시간\n\n매일 밤 12시 ~ 오전 6시는 시스템 점검 및\n판매 정지 시간으로 구매가 불가합니다.\n\n오전 6시 이후 다시 이용해 주세요.");
+                return;
+            }
+            // 토요일 20시 이후 ~ (일요일 06시까지는 위 조건에서 처리)
+            if (day === 6 && hour >= 20) {
+                alert("🛑 로또 구매 불가 시간\n\n토요일 오후 8시 ~ 일요일 오전 6시까지\n추첨일 판매 중단 시간입니다.\n\n일요일 오전 6시 이후 다시 이용해 주세요.");
+                return;
+            }
+
             if (currentNumbers.length !== 6) {
                 showToast('먼저 번호를 생성해 주세요.');
                 return;
