@@ -8,7 +8,27 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
-# ── 로깅 설정 ──────────────────────────────────────────────────
+# ── Render/Docker 환경 브라우저 경로 근본 해결 ──────────────────
+def _setup_browser_env():
+    # 1. 의심되는 모든 경로 리스트 (우리가 시도했던 모든 가능성)
+    possible_paths = [
+        "/ms-playwright",                   # 공식 Docker 이미지 기본
+        "/app/pw-browsers",                # 우리가 시도했던 경로
+        "/opt/render/.cache/ms-playwright",   # Render Native 기본
+        os.path.expanduser("~/.cache/ms-playwright") # 일반 로컬 캐시
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = path
+            return path
+    
+    # 2. Render 환경이면 일단 Native 기본 경로라도 강제 설정 (폴더가 나중에 생길 수도 있음)
+    if os.environ.get('RENDER'):
+        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = "/opt/render/.cache/ms-playwright"
+    return None
+
+_setup_browser_env()
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -597,10 +617,14 @@ def diagnostic():
     sync_playwright = _get_playwright_module()
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+            # 브라우저 실행 시 경로 이슈를 방지하기 위해 args와 함께 명시적 실행
+            browser = p.chromium.launch(
+                headless=True, 
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            )
             page = browser.new_page()
             # 동행복권 사이트 직접 접속 테스트
-            page.goto("https://www.dhlottery.co.kr/", timeout=15000)
+            page.goto("https://www.dhlottery.co.kr/", timeout=20000)
             title = page.title()
             browser.close()
             return jsonify({"success": True, "title": title, "msg": "브라우저 엔진이 정상 작동합니다."})
