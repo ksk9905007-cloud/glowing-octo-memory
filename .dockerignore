@@ -1,0 +1,13 @@
+.git
+venv
+__pycache__
+*.pyc
+.python-version
+.dockerignore
+render.yaml
+.gitignore
+SETUP.md
+artifacts
+*.bat
+*.html
+!lotto_ai.html

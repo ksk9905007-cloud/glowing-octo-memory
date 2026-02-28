@@ -89,6 +89,7 @@
             margin-bottom: 0.75rem;
             background: linear-gradient(to right, #ffffff, #94a3b8);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -432,6 +433,7 @@
             margin-bottom: 0.4rem;
             background: linear-gradient(to right, #38bdf8, #818cf8);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -540,6 +542,67 @@
             color: #4ade80;
         }
 
+        /* ── 라이브 스트림 영역 ── */
+        .live-stream-wrap {
+            width: 100%;
+            height: 200px;
+            background: #000;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+            display: none;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            position: relative;
+        }
+
+        .live-stream-wrap.active {
+            display: block;
+        }
+
+        .live-stream-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .live-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(248, 113, 113, 0.8);
+            color: white;
+            font-size: 0.65rem;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .live-badge::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: white;
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
         /* ── 구매완료 팝업 ── */
         #successModal {
             position: fixed;
@@ -605,6 +668,7 @@
             margin-bottom: 0.4rem;
             background: linear-gradient(to right, #4ade80, #22d3ee);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -756,18 +820,22 @@
             <button onclick="location.reload()"
                 style="padding: 0.6rem 1.2rem; background: #38bdf8; border: none; border-radius: 10px; color: white; font-weight: 700; cursor: pointer;">연결
                 다시 시도</button>
+            <button onclick="runDiagnostic()"
+                style="padding: 0.6rem 1.2rem; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); border-radius: 10px; color: var(--text-dim); font-weight: 500; cursor: pointer; margin-left: 0.5rem;">진단
+                실행</button>
         </div>
+    </div>
 
-        <!-- 구매 이력 -->
-        <div class="history-section">
-            <div class="history-header">
-                <span>🧾 구매 이력 <small style="color: #475569; font-size: 0.72rem;">(30일 후 자동 삭제)</small></span>
-                <button class="btn-clear-history" onclick="clearAllHistory()">전체 삭제</button>
-            </div>
-            <div class="history-scroll" id="historyList">
-                <div class="history-empty" id="historyEmpty">구매 이력이 없습니다.</div>
-            </div>
+    <!-- 구매 이력 -->
+    <div class="history-section">
+        <div class="history-header">
+            <span>🧾 구매 이력 <small style="color: #475569; font-size: 0.72rem;">(30일 후 자동 삭제)</small></span>
+            <button class="btn-clear-history" onclick="clearAllHistory()">전체 삭제</button>
         </div>
+        <div class="history-scroll" id="historyList">
+            <div class="history-empty" id="historyEmpty">구매 이력이 없습니다.</div>
+        </div>
+    </div>
     </div>
 
     <div id="toast">메시지</div>
@@ -793,6 +861,10 @@
             </div>
             <div class="progress-bar-wrap" id="progressWrap">
                 <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="live-stream-wrap" id="liveStreamWrap">
+                <div class="live-badge">LIVE SERVER SCREEN</div>
+                <img id="liveScreenImg" src="" alt="서버 화면">
             </div>
             <div class="modal-status" id="modalStatus"></div>
         </div>
@@ -881,6 +953,27 @@
 
         function closeLoginModal() {
             document.getElementById('loginModal').classList.remove('open');
+            stopLiveStream();
+        }
+
+        let liveStreamInterval = null;
+        function startLiveStream() {
+            const wrap = document.getElementById('liveStreamWrap');
+            const img = document.getElementById('liveScreenImg');
+            wrap.classList.add('active');
+
+            const apiBase = window.LOTTO_API_BASE || '';
+            liveStreamInterval = setInterval(() => {
+                img.src = `${apiBase}/screenshot?t=${Date.now()}`;
+            }, 1000);
+        }
+
+        function stopLiveStream() {
+            if (liveStreamInterval) {
+                clearInterval(liveStreamInterval);
+                liveStreamInterval = null;
+            }
+            document.getElementById('liveStreamWrap').classList.remove('active');
         }
 
         document.addEventListener('keydown', (e) => {
@@ -905,6 +998,13 @@
             const progressWrap = document.getElementById('progressWrap');
             const progressBar = document.getElementById('progressBar');
 
+            // 현재 화면 상단에 보이는 번호를 다시 한번 정확히 긁어옴
+            const ballEls = document.querySelectorAll('#ballDisplay .ball');
+            if (ballEls.length === 6) {
+                currentNumbers = Array.from(ballEls).map(b => parseInt(b.innerText)).sort((a, b) => a - b);
+                console.log('구매 요청 번호 (UI 기반):', currentNumbers);
+            }
+
             if (!uid || !upw) {
                 statusEl.textContent = '아이디와 비밀번호를 모두 입력하세요.';
                 statusEl.className = 'modal-status error';
@@ -915,6 +1015,7 @@
             confirmBtn.textContent = '진행 중...';
             statusEl.className = 'modal-status';
             progressWrap.classList.add('active');
+            startLiveStream();
 
             // 단계별 상태 메시지 (약 50초 총 소요 가정)
             const steps = [
@@ -1163,6 +1264,22 @@
                 purchaseBtn.style.opacity = '0.5';
                 // 서버 없어도 로컬스토리지 이력은 표시
                 renderHistoryItems(loadHistoryLocal());
+            }
+        }
+
+        async function runDiagnostic() {
+            const apiBase = window.LOTTO_API_BASE || '';
+            showToast('서버 브라우저 엔진 진단 시작...');
+            try {
+                const res = await fetch(`${apiBase}/diagnostic`);
+                const data = await res.json();
+                if (data.success) {
+                    alert('✅ 진단 성공: ' + data.msg + '\n접속 확인: ' + data.title);
+                } else {
+                    alert('❌ 진단 실패: ' + data.msg);
+                }
+            } catch (e) {
+                alert('⚠️ 진단 요청 실패: 서버에 연결할 수 없습니다.');
             }
         }
 

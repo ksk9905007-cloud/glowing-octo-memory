@@ -30,8 +30,11 @@ HISTORY_FILE = os.path.join(BASE_DIR, 'purchase_history.json')
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/122.0.0.0 Safari/537.36"
+    "Chrome/133.0.0.0 Safari/537.36"
 )
+
+# ── 실시간 화면 중계용 ──────────────────────────────────────────
+latest_screenshot = None
 
 # ══════════════════════════════════════════════════════════════
 #  이력 관리
@@ -79,6 +82,15 @@ def _get_playwright_module():
     from playwright.sync_api import sync_playwright
     return sync_playwright
 
+def _capture_screenshot(page):
+    """현재 브라우저 화면 캡처 및 전역 변수 업데이트"""
+    global latest_screenshot
+    try:
+        # 가벼운 JPEG 포맷으로 캡처 (용량 최적화)
+        latest_screenshot = page.screenshot(type="jpeg", quality=60)
+    except Exception as e:
+        logger.debug(f"[SCREEN] 캡처 실패: {e}")
+
 def is_logged_in(page):
     try:
         content = page.content()
@@ -89,31 +101,90 @@ def is_logged_in(page):
 def do_login(page, user_id, user_pw):
     logger.info(f"[LOGIN] '{user_id}' 로그인 시도...")
     try:
-        page.goto("https://www.dhlottery.co.kr/user.do?method=login",
+        logger.info("[LOGIN] 메인 홈페이지 먼저 접속 후 2.5초 대기...")
+        page.goto("https://www.dhlottery.co.kr/", wait_until="domcontentloaded", timeout=30000)
+        time.sleep(2.5)
+
+        logger.info("[LOGIN] 로그인 페이지로 이동...")
+        # 리퍼러(이전 페이지 기록)를 조작하여 정상적인 링크 탑승으로 완전 위장
+        page.goto("https://www.dhlottery.co.kr/login", 
+                  referer="https://www.dhlottery.co.kr/", 
                   wait_until="domcontentloaded", timeout=30000)
         time.sleep(2)
 
-        # 아이디 입력
-        page.wait_for_selector("#userId", timeout=10000)
-        page.fill("#userId", "")
-        page.fill("#userId", user_id)
-        time.sleep(0.3)
+        # 변경된 아이디 입력창 (#inpUserId)
+        page.wait_for_selector("#inpUserId", timeout=60000)
+        page.wait_for_timeout(1000)
+        page.locator("#inpUserId").click()
+        page.wait_for_timeout(800)
+        page.fill("#inpUserId", "")
+        page.locator("#inpUserId").press_sequentially(user_id, delay=200)
+        page.wait_for_timeout(800)
 
-        # 비밀번호 입력
-        page.fill("#password", "")
-        page.fill("#password", user_pw)
-        time.sleep(0.5)
+        # 변경된 비밀번호 입력창 (#inpUserPswdEncn)
+        page.locator("#inpUserPswdEncn").click()
+        page.wait_for_timeout(1000)
+        page.fill("#inpUserPswdEncn", "")
+        # 비밀번호는 보안상 리얼하게 한 자씩 더 천천히 (250ms)
+        page.locator("#inpUserPswdEncn").press_sequentially(user_pw, delay=250)
+        page.wait_for_timeout(1200)
+        _capture_screenshot(page)
 
-        # 로그인 버튼 클릭
-        page.click(".btn_common.lrg.blu")
-        time.sleep(3)
+        # 로그인 시뮬레이션: 버튼 위에서 약간 머무른 후 클릭
+        login_btn = page.locator("#btnLogin")
+        login_btn.hover()
+        page.wait_for_timeout(500)
+        login_btn.click(delay=150)
+        time.sleep(4)
 
-        # 로그인 성공 확인 (최대 15초 대기)
+        # 1. 일반적인 로그인 성공 확인 + 간소화 페이지 대응
         for i in range(15):
+            content = page.content()
+            # 간소화 페이지 운영 중 메시지 감지
+            if "간소화" in content and "운영" in content:
+                logger.info("[LOGIN] ⚠️ 간소화 페이지 감지! '동행복권통합포탈이동' 버튼 클릭 시도...")
+                # '동행복권통합포탈이동' 버튼 클릭 시도
+                try:
+                    btns = [
+                        "a:text-is('동행복권통합포탈이동')",
+                        "button:text-is('동행복권통합포탈이동')",
+                        "a:has-text('통합포탈')",
+                        "button:has-text('통합포탈')",
+                        "a:text-is('동행복권포탈이동')", # 기존 대비용
+                    ]
+                    clicked = False
+                    for b in btns:
+                        if page.locator(b).first.is_visible(timeout=2000):
+                            page.locator(b).first.click()
+                            logger.info(f"[LOGIN] '{b}' 버튼 클릭 성공")
+                            clicked = True
+                            break
+                    if not clicked:
+                        # 버튼을 못 찾으면 직접 메인으로 재접속
+                        page.goto("https://www.dhlottery.co.kr/common.do?method=main", timeout=30000)
+                except:
+                    pass
+                time.sleep(3)
+            
             if is_logged_in(page):
                 logger.info("[LOGIN] ✅ 로그인 성공!")
                 return True
+            
+            # 페이지에 '로그인 실패' 혹은 '로그인 정보' 등 키워드가 있는지 확인
+            current_text = page.content()
+            if "로그인 정보가 맞지 않습니다" in current_text or "아이디 또는 비밀번호" in current_text:
+                logger.warning("[LOGIN] ❌ 아이디/비밀번호 불일치 메시지 감지")
+                return False
+            
             time.sleep(1)
+
+        # 2. 로또 6/45 전용 직접 확인 (간소화 페이지 우회용)
+        try:
+            page.goto("https://ol.dhlottery.co.kr/olotto/game/game645.do", timeout=10000)
+            if "로그아웃" in page.content() or "게임" in page.content():
+                logger.info("[LOGIN] ✅ 로또 전용 페이지를 통해 로그인 성공 확인!")
+                return True
+        except: pass
 
         # 실패 메시지 확인
         try:
@@ -128,18 +199,20 @@ def do_login(page, user_id, user_pw):
         logger.error(f"[LOGIN] 오류: {e}")
         return False
 
-def _click_in_frame(page, selector, frame_name="ifrm_lotto645"):
-    """ifrm_lotto645 프레임 내에서 클릭, 실패하면 메인에서 시도"""
-    # 1. 지정 프레임
-    try:
-        frame = page.frame(name=frame_name)
-        if frame:
-            el = frame.locator(selector).first
-            if el.is_visible(timeout=2000):
-                el.click(force=True, timeout=3000)
-                return True
-    except:
-        pass
+def _click_in_frame(page, selector, frame_names=["ifrm_lotto645", "ifrm_tab"]):
+    """지정된 프레임 내에서 클릭, 실패하면 전체 프레임 및 메인에서 시도"""
+    # 1. 우선순위 프레임들 탐색
+    for frame_name in frame_names:
+        try:
+            frame = page.frame(name=frame_name)
+            if frame:
+                el = frame.locator(selector).first
+                if el.is_visible(timeout=1000):
+                    el.click(force=True, timeout=2000)
+                    return True
+        except:
+            pass
+
     # 2. 모든 프레임 순회
     try:
         for frame in page.frames:
@@ -152,6 +225,7 @@ def _click_in_frame(page, selector, frame_name="ifrm_lotto645"):
                 pass
     except:
         pass
+
     # 3. 메인 페이지
     try:
         el = page.locator(selector).first
@@ -162,36 +236,76 @@ def _click_in_frame(page, selector, frame_name="ifrm_lotto645"):
         pass
     return False
 
-def _click_number(page, num):
-    """로또 번호 선택 (볼 클릭)"""
-    padded = f"{num:02d}"
-    selectors = [
-        f"label[for='check645num{padded}']",
-        f"label[for='check645num{num}']",
-        f"#num{padded}",
-    ]
-    for sel in selectors:
-        if _click_in_frame(page, sel):
-            return True
-
-    # JS 우회 (iframe 내부)
+def _prepare_lotto_board(page):
+    """로또 마킹판 준비 (탭 활성화 및 초기화) - 한 번만 호출"""
+    logger.info("[PURCHASE] 마킹판 초기화 및 탭 활성화...")
     try:
-        frame = page.frame(name="ifrm_lotto645")
-        if frame:
-            frame.evaluate(f"""() => {{
-                const pad = n => String(n).padStart(2,'0');
-                const sel1 = `label[for='check645num${{pad({num})}}']`;
-                const sel2 = `label[for='check645num{num}']`;
-                const el = document.querySelector(sel1) || document.querySelector(sel2);
-                if (el) {{ el.click(); return; }}
-                document.querySelectorAll('label, span').forEach(e => {{
-                    if (e.innerText.trim() === '{num}') e.click();
-                }});
-            }}""")
-            return True
-    except:
-        pass
+        for fname in ["ifrm_tab", "ifrm_lotto645"]:
+            frame = page.frame(name=fname)
+            if frame:
+                frame.evaluate("""() => {
+                    try {
+                        if (typeof selectWayTab === 'function') selectWayTab(0);
+                        if (typeof resetNumber645 === 'function') resetNumber645();
+                        else if (typeof resetAllNum === 'function') resetAllNum();
+                        
+                        // 시각적 리셋 (ID 기반)
+                        const btnReset = document.getElementById('resetAllNum') || document.getElementById('btnReset');
+                        if (btnReset) btnReset.click();
+                    } catch(e) {}
+                }""")
+                time.sleep(1)
+                return True
+    except: pass
     return False
+
+def _mark_single_number(page, num):
+    """개별 번호 마킹 (초기화 없이 단순 마킹)"""
+    try:
+        for fname in ["ifrm_tab", "ifrm_lotto645"]:
+            frame = page.frame(name=fname)
+            if frame:
+                success = frame.evaluate(f"""(n) => {{
+                    try {{
+                        const pad = String(n).padStart(2,'0');
+                        const id = 'check645num' + n;
+                        const id_padded = 'check645num' + pad;
+                        const cb = document.getElementById(id) || document.getElementById(id_padded);
+                        
+                        // 이미 체크되어 있다면 건너뜀 (중복 클릭 방지)
+                        if (cb && cb.checked) return true;
+
+                        // 사이트 내장 함수 호출
+                        if (typeof check645 === 'function') {{
+                            check645(n);
+                            return true;
+                        }} else {{
+                            // 직접 클릭 (레이블 우선)
+                            const label = document.querySelector(`label[for="${{id}}"]`) || 
+                                           document.querySelector(`label[for="${{id_padded}}"]`);
+                            if (label) {{ label.click(); return true; }}
+                            if (cb) {{ cb.click(); return true; }}
+                        }}
+                    }} catch(e) {{}}
+                    return false;
+                }}""", num)
+                if success: return True
+    except: pass
+    return False
+
+def _mark_numbers_batch(page, numbers):
+    # 이 함수는 이제 순차 마킹 로직으로 통합 운영됩니다.
+    _prepare_lotto_board(page)
+    count = 0
+    for n in numbers:
+        if _mark_single_number(page, n):
+            count += 1
+        time.sleep(0.8)
+    return count >= 6
+
+def _click_number(page, num):
+    # 개별 마킹용 폴백
+    return _mark_single_number(page, num)
 
 def get_round_info(page):
     """현재 회차 정보 수집"""
@@ -243,43 +357,74 @@ def do_purchase(page, numbers):
             "https://el.dhlottery.co.kr/game/TotalGame.jsp?LottoId=LO40",
             wait_until="domcontentloaded", timeout=40000
         )
+        _capture_screenshot(page)
 
         # ─────────────────────────────────────────
-        # 2. iframe 로딩 대기
         # ─────────────────────────────────────────
-        logger.info("[PURCHASE] iframe 로딩 대기...")
-        page.wait_for_selector("#ifrm_lotto645", timeout=20000)
+        # 2. iframe 로딩 대기 (다중 프레임 지원)
+        # ─────────────────────────────────────────
+        logger.info("[PURCHASE] 게임 프레임 로딩 대기...")
+        try:
+            # ifrm_lotto645 또는 ifrm_tab 둘 중 하나가 나타날 때까지 대기
+            page.wait_for_function("""() => 
+                document.getElementById('ifrm_lotto645') !== null || 
+                document.getElementById('ifrm_tab') !== null ||
+                document.getElementsByName('ifrm_lotto645').length > 0 ||
+                document.getElementsByName('ifrm_tab').length > 0
+            """, timeout=30000)
+            logger.info("[PURCHASE] 게임 프레임 식별 성공")
+        except:
+            logger.warning("[PURCHASE] 프레임 로딩 대기 시간 초과, 계속 진행 시도...")
+        
         time.sleep(3)
 
         # ─────────────────────────────────────────
-        # 3. 팝업 닫기
+        # 3. 팝업 닫기 및 '혼합선택' 탭 클릭 (번호 입력을 위해 필수)
         # ─────────────────────────────────────────
         for close_sel in [
             "input[value='닫기']", ".close_btn", ".btn_close",
             "a:text-is('닫기')", "button:text-is('닫기')"
         ]:
             try:
-                frame = page.frame(name="ifrm_lotto645")
-                if frame:
-                    frame.locator(close_sel).first.click(timeout=500, force=True)
-            except:
-                pass
-            try:
-                page.locator(close_sel).first.click(timeout=500, force=True)
+                _click_in_frame(page, close_sel)
             except:
                 pass
         time.sleep(1)
 
         # ─────────────────────────────────────────
-        # 4. 번호 선택
+        # 3. 마킹 준비 (탭 활성화 및 초기화)
         # ─────────────────────────────────────────
-        logger.info(f"[PURCHASE] 번호 선택 시작: {numbers}")
-        for num in numbers:
-            ok = _click_number(page, num)
-            logger.info(f"[PURCHASE] {num}번 선택 {'✅' if ok else '⚠️'}")
-            time.sleep(0.2)
+        logger.info("[PURCHASE] 번호 선택판 준비 중...")
+        # 이 과정은 _mark_numbers_batch 내부에서 JS로 더 안정적으로 처리하도록 이양했습니다.
+        time.sleep(1)
 
-        time.sleep(0.5)
+        # ─────────────────────────────────────────
+        # ─────────────────────────────────────────
+        # 4. 번호 선택 (순차적으로 정밀 마킹)
+        # ─────────────────────────────────────────
+        logger.info(f"[PURCHASE] {numbers} 번호를 하나씩 순차적으로 마킹합니다...")
+        
+        # 4-1. 마킹판 준비 (탭 활성화 및 초기화) - 한 번만 수행
+        _prepare_lotto_board(page)
+        
+        selected_count = 0
+        for num in numbers:
+            # 개별 순차 마킹 (중복 클릭 및 초기화 루프 방지)
+            ok = _mark_single_number(page, num)
+            if ok:
+                selected_count += 1
+                logger.info(f"[PURCHASE] {num}번 마킹 완료 ✅ ({selected_count}/6)")
+            else:
+                logger.warning(f"[PURCHASE] {num}번 마킹 실패 ⚠️")
+            
+            # 사람이 직접 누르는 느낌과 인식률을 위해 0.8초 간격 유지
+            time.sleep(0.8)
+            if num == numbers[-1]: _capture_screenshot(page) # 마지막 번호 선택 후 캡처
+
+        if selected_count < 6:
+            logger.warning(f"[PURCHASE] 번호 선택이 완벽하지 않음 ({selected_count}/6)")
+
+        time.sleep(1.0)
 
         # ─────────────────────────────────────────
         # 5. '확인' 버튼 (선택 완료)
@@ -292,7 +437,8 @@ def do_purchase(page, numbers):
                 ok = True
                 break
         if not ok:
-            logger.warning("[PURCHASE] '확인' 버튼 못 찾음, 계속 진행...")
+            logger.warning("[PURCHASE] ❌ '확인' 버튼 못 찾음")
+            return False, "번호 선택 '확인' 버튼을 클릭하지 못했습니다.", round_no, round_date
 
         time.sleep(2)
 
@@ -311,9 +457,15 @@ def do_purchase(page, numbers):
                 ok = True
                 break
         if not ok:
-            logger.warning("[PURCHASE] '구매하기' 버튼 못 찾음")
+            logger.warning("[PURCHASE] ❌ '구매하기' 버튼 못 찾음")
+            return False, "'구매하기' 버튼을 클릭하지 못했습니다.", round_no, round_date
 
         time.sleep(2)
+        
+        # 구매 후 나타난 모든 경고/에러 다이얼로그(잔액부족, 구매한도, 구매불가 시간 등) 다시 한 번 확인
+        for m in dialog_msgs:
+            if any(err in m for err in ["부족", "초과", "오류", "마감", "로그인", "실패"]):
+                return False, f"구매 실패: {m}", round_no, round_date
 
         # ─────────────────────────────────────────
         # 7. 확인 팝업 ("구매하시겠습니까?")
@@ -347,6 +499,7 @@ def do_purchase(page, numbers):
             try:
                 if _click_in_frame(page, sel):
                     logger.info(f"[PURCHASE] 구매내역 팝업 클릭 ({sel})")
+                    _capture_screenshot(page) # 최종 완료 직전 캡처
                     break
             except:
                 pass
@@ -375,13 +528,26 @@ def automate_purchase(user_id, user_pw, numbers):
                     "--disable-dev-shm-usage",
                     "--disable-blink-features=AutomationControlled",
                     "--disable-infobars",
+                    "--disable-gpu",
+                    "--no-zygote",
+                    "--disable-software-rasterizer"
                 ]
             )
             context = browser.new_context(
-                viewport={"width": 1366, "height": 768},
+                viewport={"width": 1920, "height": 1080},
                 user_agent=UA,
                 locale="ko-KR",
+                timezone_id="Asia/Seoul",
+                ignore_https_errors=True
             )
+            
+            # 고급 스텔스 설정
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko', 'en-US', 'en'] });
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            """)
             page = context.new_page()
 
             # Playwright Stealth (있으면 적용)
@@ -418,7 +584,37 @@ def index():
 @app.route('/health')
 @app.route('/ping')
 def health():
-    return jsonify({"status": "ok", "env": "render" if os.environ.get('RENDER') else "local"}), 200
+    return jsonify({
+        "status": "ok", 
+        "env": "render" if os.environ.get('RENDER') else "local",
+        "python": sys.version[:10],
+        "playwright": "available"
+    }), 200
+
+@app.route('/diagnostic')
+def diagnostic():
+    """브라우저 실행 가능 여부 정밀 진단"""
+    logger.info("[DIAG] 브라우저 진단 시작...")
+    sync_playwright = _get_playwright_module()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+            page = browser.new_page()
+            page.goto("https://www.google.com", timeout=15000)
+            title = page.title()
+            browser.close()
+            return jsonify({"success": True, "title": title, "msg": "브라우저 엔진이 정상 작동합니다."})
+    except Exception as e:
+        logger.error(f"[DIAG] 실패: {e}")
+        return jsonify({"success": False, "msg": str(e)}), 500
+
+@app.route('/screenshot')
+def get_screenshot():
+    """현재 캡처된 화면 이미지 전송"""
+    from flask import Response
+    if latest_screenshot:
+        return Response(latest_screenshot, mimetype='image/jpeg')
+    return "No screenshot", 404
 
 @app.route('/buy', methods=['POST'])
 def buy():
