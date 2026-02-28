@@ -759,8 +759,26 @@
         #serverStatus {
             font-size: 0.95rem;
             margin-top: -1.5rem;
-            margin-bottom: 2rem;
+            margin-bottom: 0.5rem;
             font-weight: 600;
+        }
+
+        .diagnostic-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            color: var(--text-dim);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            margin-bottom: 2rem;
+            transition: all 0.3s;
+        }
+
+        .diagnostic-btn:hover {
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-primary);
+            border-color: var(--accent-primary);
         }
 
         #launcherGuide {
@@ -812,6 +830,7 @@
 
         <button class="base-btn btn-main" id="purchaseBtn" onclick="openLoginModal()">🎰 동행복권 즉시 구매 (연계계정)</button>
         <div id="serverStatus">서버 확인 중...</div>
+        <button class="diagnostic-btn" onclick="runDiagnostic()">연결 정밀 진단</button>
 
         <div id="launcherGuide">
             <p style="font-size: 0.9rem; color: #f87171; margin-bottom: 1rem; line-height: 1.5;">⚠️ <b>서버 연동 실패:</b> 파이썬
@@ -820,22 +839,17 @@
             <button onclick="location.reload()"
                 style="padding: 0.6rem 1.2rem; background: #38bdf8; border: none; border-radius: 10px; color: white; font-weight: 700; cursor: pointer;">연결
                 다시 시도</button>
-            <button onclick="runDiagnostic()"
-                style="padding: 0.6rem 1.2rem; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); border-radius: 10px; color: var(--text-dim); font-weight: 500; cursor: pointer; margin-left: 0.5rem;">진단
-                실행</button>
         </div>
-    </div>
-
-    <!-- 구매 이력 -->
-    <div class="history-section">
-        <div class="history-header">
-            <span>🧾 구매 이력 <small style="color: #475569; font-size: 0.72rem;">(30일 후 자동 삭제)</small></span>
-            <button class="btn-clear-history" onclick="clearAllHistory()">전체 삭제</button>
+        <!-- 구매 이력 -->
+        <div class="history-section">
+            <div class="history-header">
+                <span>🧾 구매 이력 <small style="color: #475569; font-size: 0.72rem;">(30일 후 자동 삭제)</small></span>
+                <button class="btn-clear-history" onclick="clearAllHistory()">전체 삭제</button>
+            </div>
+            <div class="history-scroll" id="historyList">
+                <div class="history-empty" id="historyEmpty">구매 이력이 없습니다.</div>
+            </div>
         </div>
-        <div class="history-scroll" id="historyList">
-            <div class="history-empty" id="historyEmpty">구매 이력이 없습니다.</div>
-        </div>
-    </div>
     </div>
 
     <div id="toast">메시지</div>

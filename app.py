@@ -600,7 +600,8 @@ def diagnostic():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
             page = browser.new_page()
-            page.goto("https://www.google.com", timeout=15000)
+            # 동행복권 사이트 직접 접속 테스트
+            page.goto("https://www.dhlottery.co.kr/", timeout=15000)
             title = page.title()
             browser.close()
             return jsonify({"success": True, "title": title, "msg": "브라우저 엔진이 정상 작동합니다."})
