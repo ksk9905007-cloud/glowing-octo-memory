@@ -112,30 +112,29 @@ def do_login(page, user_id, user_pw):
                   wait_until="domcontentloaded", timeout=30000)
         time.sleep(2)
 
-        # 변경된 아이디 입력창 (#inpUserId)
-        page.wait_for_selector("#inpUserId", timeout=60000)
-        page.wait_for_timeout(1000)
-        page.locator("#inpUserId").click()
-        page.wait_for_timeout(800)
-        page.fill("#inpUserId", "")
-        page.locator("#inpUserId").press_sequentially(user_id, delay=200)
-        page.wait_for_timeout(800)
-
-        # 변경된 비밀번호 입력창 (#inpUserPswdEncn)
-        page.locator("#inpUserPswdEncn").click()
-        page.wait_for_timeout(1000)
-        page.fill("#inpUserPswdEncn", "")
-        # 비밀번호는 보안상 리얼하게 한 자씩 더 천천히 (250ms)
-        page.locator("#inpUserPswdEncn").press_sequentially(user_pw, delay=250)
-        page.wait_for_timeout(1200)
+        # 변경된 아이디 입력창 (#userId)
+        page.wait_for_selector("#userId", timeout=30000)
+        page.wait_for_timeout(500)
+        page.locator("#userId").click()
+        page.fill("#userId", "")
+        page.type("#userId", user_id, delay=150)
+        
+        # 변경된 비밀번호 입력창 (#userPwd)
+        page.locator("#userPwd").click()
+        page.fill("#userPwd", "")
+        page.type("#userPwd", user_pw, delay=200)
+        page.wait_for_timeout(500)
         _capture_screenshot(page)
 
-        # 로그인 시뮬레이션: 버튼 위에서 약간 머무른 후 클릭
-        login_btn = page.locator("#btnLogin")
+        # 로그인 버튼 (#btnLogin / .btn_common.lrg.blu)
+        login_btn = page.locator(".btn_common.lrg.blu").first
+        if not login_btn.is_visible():
+            login_btn = page.locator("#btnLogin")
+            
         login_btn.hover()
-        page.wait_for_timeout(500)
-        login_btn.click(delay=150)
-        time.sleep(4)
+        page.wait_for_timeout(300)
+        login_btn.click()
+        time.sleep(3)
 
         # 1. 일반적인 로그인 성공 확인 + 간소화 페이지 대응
         for i in range(15):
