@@ -10,12 +10,16 @@ from flask_cors import CORS
 
 # ── Render/Docker 환경 브라우저 경로 근본 해결 ──────────────────
 def _setup_browser_env():
-    # 1. 의심되는 모든 경로 리스트 (우리가 시도했던 모든 가능성)
+    # 1. 환경변수가 이미 설정되어 있고 존재한다면 최우선 사용
+    env_path = os.environ.get('PLAYWRIGHT_BROWSERS_PATH')
+    if env_path and os.path.exists(env_path):
+        return env_path
+        
+    # 2. 알려진 모든 경로 리스트 순차 탐색
     possible_paths = [
-        "/ms-playwright",                   # 공식 Docker 이미지 기본
-        "/app/pw-browsers",                # 우리가 시도했던 경로
-        "/opt/render/.cache/ms-playwright",   # Render Native 기본
-        os.path.expanduser("~/.cache/ms-playwright") # 일반 로컬 캐시
+        "/opt/render/.cache/ms-playwright",   # Render Native (Cache)
+        os.path.expanduser("~/.cache/ms-playwright"), # Linux 기본 캐시
+        "/ms-playwright",                   # Docker 이미지 기본
     ]
     
     for path in possible_paths:
@@ -23,7 +27,7 @@ def _setup_browser_env():
             os.environ['PLAYWRIGHT_BROWSERS_PATH'] = path
             return path
     
-    # 2. Render 환경이면 일단 Native 기본 경로라도 강제 설정 (폴더가 나중에 생길 수도 있음)
+    # 3. Render 환경이면 일단 Native 기본 경로로 강제 지정 (빌드 단계에서 생성됨)
     if os.environ.get('RENDER'):
         os.environ['PLAYWRIGHT_BROWSERS_PATH'] = "/opt/render/.cache/ms-playwright"
     return None

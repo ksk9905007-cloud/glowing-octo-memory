@@ -1,12 +1,13 @@
 services:
   - type: web
     name: lotto-ai
-    runtime: docker
-    plan: starter
+    runtime: python
+    buildCommand: pip install -r requirements.txt && playwright install --with-deps chromium
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 180 --workers 1 --threads 1 --worker-class gthread
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.8
       - key: RENDER
         value: true
-      - key: PORT
-        value: 10000
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/.cache/ms-playwright
