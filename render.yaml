@@ -1,9 +1,8 @@
 services:
   - type: web
     name: lotto-ai
-    runtime: python
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt && python -m playwright install --with-deps chromium
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 180 --workers 1 --threads 1 --worker-class gthread
+    runtime: docker
+    plan: starter
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.8
