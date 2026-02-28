@@ -22,4 +22,4 @@ EXPOSE 10000
 
 # Start application using Gunicorn
 # Bind to 0.0.0.0:10000 which is Render's default
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000", "--timeout", "180", "--workers", "1", "--threads", "1", "--worker-class", "gthread"]
+CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-10000} --timeout 180 --workers 1 --threads 1 --worker-class gthread"]
