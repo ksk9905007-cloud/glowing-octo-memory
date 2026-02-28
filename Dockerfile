@@ -8,13 +8,13 @@ ENV RENDER true
 ENV PORT 10000
 
 # Set working directory
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/pw-browsers
 WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN playwright install --with-deps chromium
+# 공식 이미지는 이미 브라우저가 설치되어 있지만, 혹시 모르니 최소한으로 유지
+RUN playwright install chromium
 
 # Copy project files
 COPY . .
